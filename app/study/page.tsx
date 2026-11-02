@@ -73,16 +73,20 @@ export default function StudyPage() {
   };
 
   const next = useCallback(async () => {
-    setIdx((i) => {
-      if (i + 1 < queue.length) return i + 1;
-      // 队列耗尽：续拉
-      more().then((cards) => {
-        if (cards.length) setQueue((q) => q.concat(cards));
-        else setStarted(false);
-      });
-      return i;
-    });
-  }, [queue.length]);
+    if (idx + 1 < queue.length) {
+      setIdx(idx + 1);
+      return;
+    }
+    // 队列耗尽：续拉新题并跳到第一批追加的题目
+    const cards = await more();
+    if (cards.length) {
+      const firstNew = queue.length;
+      setQueue((q) => q.concat(cards));
+      setIdx(firstNew);
+    } else {
+      setStarted(false);
+    }
+  }, [idx, queue.length]);
 
   if (!started) {
     return (

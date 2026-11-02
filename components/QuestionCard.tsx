@@ -212,7 +212,15 @@ export function QuestionCard({
             ))}
           </div>
           <div className="muted" style={{ marginTop: 8 }}>
-            <button onClick={onNext} className="muted" style={{ background: "none" }}>
+            <button
+              onClick={() => {
+                setRevealed(null);
+                setPicked(null);
+                onNext();
+              }}
+              className="muted"
+              style={{ background: "none" }}
+            >
               跳过/下一题 →
             </button>
           </div>
