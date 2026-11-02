@@ -47,7 +47,6 @@ export default function LoginPage() {
     <div className="center-page">
       <div className="card" style={{ width: 340 }}>
         <img src="/logo.png" className="login-logo" alt="刷题啦" />
-        <h1 className="login-title">刷题啦</h1>
         <p className="muted" style={{ textAlign: "center" }}>
           行测真题 · SM-2 间隔重复
         </p>

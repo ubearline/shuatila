@@ -11,7 +11,9 @@ a:hover { text-decoration: underline; }
 
 .shell { display: flex; min-height: 100vh; }
 .sidebar { width: 200px; flex-shrink: 0; background: #171c24; border-right: 1px solid #242a35; display: flex; flex-direction: column; padding: 14px 10px; }
-.sidebar .brand { font-weight: 700; font-size: 16px; padding: 6px 10px 16px; }
+.sidebar .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; padding: 6px 10px 16px; }
+.brand-logo { width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0; }
+.login-logo { width: 150px; height: auto; display: block; margin: 0 auto 2px; }
 .sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .sidebar nav a { padding: 8px 10px; border-radius: 6px; color: #b6bcc7; }
 .sidebar nav a:hover { background: #1f2631; text-decoration: none; }
