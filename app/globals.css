@@ -59,6 +59,10 @@ th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid #242a35; }
 th { color: #8a8f98; font-weight: 500; }
 
 .htmlimg img { max-width: 100%; border-radius: 6px; }
+
+/* 公式图：透明底黑字，暗色模式下反转为白字（不改动原图） */
+.formula-img { filter: invert(1) hue-rotate(180deg) brightness(1.25); }
+/* 题目图：白底黑字，暗色下保持原样（白卡片黑字可读），不做反转 */
 .stem h3 { font-size: 15px; margin: 6px 0; }
 
 .focus { max-width: 680px; margin: 0 auto; }
