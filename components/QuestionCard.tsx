@@ -50,7 +50,7 @@ export function QuestionCard({
   const [revealed, setRevealed] = useState<Card | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showMaterial, setShowMaterial] = useState(false);
+  const [showMaterial, setShowMaterial] = useState(true);
   const [noteText, setNoteText] = useState("");
   const [editingNote, setEditingNote] = useState(false);
 
