@@ -1,0 +1,30 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# data — runtime（合并库 / 用户库 / 图片均为运行时产物，不入库）
+# 题库分卷在 db/ 提交；data/ 由 db:assemble + 启动时生成
+/data/kaogong.db
+/data/users.db
+/data/users.db-shm
+/data/users.db-wal
+/data/images/
+*.log
+
+# build info
+tsconfig.tsbuildinfo
+
+# env / os
+.env*
+!.env.example
+.DS_Store
+Thumbs.db

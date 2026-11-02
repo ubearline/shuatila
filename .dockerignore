@@ -1,0 +1,8 @@
+# Docker build 上下文排除
+node_modules
+.next
+data/images
+data/kaogong.db
+data/users.db
+.git
+*.md

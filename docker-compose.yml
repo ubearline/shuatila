@@ -1,0 +1,21 @@
+services:
+  shuatila:
+    build: .
+    image: shuatila:latest
+    container_name: shuatila
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      # 用户库持久化到命名卷；题库库/图片在镜像内只读
+      - USERS_DB_PATH=/data/users.db
+      - KAOGONG_DB_PATH=/app/data/kaogong.db
+      - IMAGES_DIR=/app/data/images
+    volumes:
+      # 关键：用户数据（账号 / srs / 笔记 / 收藏 / 模考）持久化，更新镜像不丢
+      - shuatila-data:/data
+      # 可选：如需随镜像外更新配图，可挂载一个含 90-图片 的目录覆盖镜像内 IMAGES_DIR
+      # - ./data/images:/app/data/images:ro
+volumes:
+  shuatila-data:
