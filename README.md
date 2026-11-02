@@ -46,7 +46,7 @@ docker compose up -d --build
 ## GitHub Actions
 
 - `ci.yml`：PR/推送触发，pnpm 安装 → `db:assemble` → typecheck → lint → 测试 → `next build`。
-- `docker-publish.yml`：main 分支 / tag 触发，buildx 构建 **linux/amd64 + linux/arm64**，推送 `ghcr.io/<owner>/<repo>` 与 Docker Hub（若配置 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` secrets）。
+- `docker-publish.yml`：main 分支 / tag 触发，buildx 构建 **linux/amd64 + linux/arm64**，推送 `ghcr.io/<owner>/<repo>`（GitHub Container Registry，使用内置 `GITHUB_TOKEN`，无需额外密钥）。
 
 ## 认证
 
