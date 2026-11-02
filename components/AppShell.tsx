@@ -23,6 +23,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
+  const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -46,6 +47,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     })();
   }, [pathname]);
 
+  // 路由切换时收起移动端抽屉
+  useEffect(() => {
+    setNavOpen(false);
+  }, [pathname]);
+
   // 未登录 → 登录页
   useEffect(() => {
     if (!loading && !authed && pathname !== "/login") {
@@ -62,14 +68,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="shell">
-      <aside className="sidebar">
+      <header className="topbar">
+        <button
+          className="hamburger"
+          aria-label="打开菜单"
+          onClick={() => setNavOpen((v) => !v)}
+        >
+          ☰
+        </button>
+        <span className="topbar-title">刷题啦</span>
+      </header>
+
+      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
+
+      <aside className={`sidebar${navOpen ? " open" : ""}`}>
         <div className="brand">
           <img src="/brand-icon.png" className="brand-logo" alt="刷题啦" />
           <span>刷题啦</span>
         </div>
         <nav>
           {NAV.map((n) => (
-            <Link key={n.href} href={n.href} className={pathname === n.href ? "active" : ""}>
+            <Link
+              key={n.href}
+              href={n.href}
+              className={pathname === n.href ? "active" : ""}
+              onClick={() => setNavOpen(false)}
+            >
               {n.label}
             </Link>
           ))}
