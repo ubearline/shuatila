@@ -1,6 +1,0 @@
-D:\project\ShuaTiLa\.creative-design\logo-redesign\convert.py:6: SyntaxWarning: invalid escape sequence '\l'
-  cands = base / ".creative-design\logo-redesign\cands"
-Traceback (most recent call last):
-  File "D:\project\ShuaTiLa\.creative-design\logo-redesign\convert.py", line 11, in <module>
-    from PIL import Image
-ModuleNotFoundError: No module named 'PIL'
