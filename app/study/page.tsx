@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/client";
 import { QuestionCard, Card } from "@/components/QuestionCard";
 
-type Config = { mode: string; size: number; module?: string; category?: string; kadian?: string; ref?: string };
+type Config = { mode: string; size: number; module?: string; category?: string; kadian?: string; ref?: string; matReview?: boolean };
 
 const MODES: { id: string; label: string }[] = [
   { id: "mix", label: "混合（错题+到期+新题）" },
@@ -51,15 +51,12 @@ export default function StudyPage() {
   }, []);
 
   const start = async () => {
-    if (cfg.mode === "material" && !cfg.ref) {
-      alert("材料组题需要指定材料组，请从材料列表进入。");
-      return;
-    }
     const params: Record<string, string> = { mode: cfg.mode, size: String(cfg.size) };
     if (cfg.module) params.module = cfg.module;
     if (cfg.category) params.category = cfg.category;
     if (cfg.kadian) params.kadian = cfg.kadian;
     if (cfg.ref) params.ref = cfg.ref;
+    if (cfg.mode === "material" && cfg.matReview) params.review = "1";
     const r = await api<{ cards: Card[] }>("/api/next", { params });
     setQueue(r.cards);
     setIdx(0);
@@ -140,6 +137,16 @@ export default function StudyPage() {
                 ))}
               </select>
             </label>
+            {cfg.mode === "material" && !cfg.ref && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(cfg.matReview)}
+                  onChange={(e) => setCfg({ ...cfg, matReview: e.target.checked })}
+                />
+                只练到期复习题（需先练过本组才会到期）
+              </label>
+            )}
             <label>
               每题批数量
               <input

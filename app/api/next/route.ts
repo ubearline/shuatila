@@ -38,9 +38,31 @@ export const GET = wrap<unknown>(async (req: NextRequest) => {
       rows.sort((a, b) => (order.get(a.id) ?? 9999) - (order.get(b.id) ?? 9999));
     }
   } else if (mode === "material") {
-    rows = qd
-      .prepare(`SELECT q.* FROM questions q WHERE q.material_ref=?${exclClause} ORDER BY q.id LIMIT ?`)
-      .all(ref, ...exclIds, size) as QuestionRow[];
+    // 无 ref = 随机抽一个材料组（≥2 题）；review=1 时只取该组内到期的题
+    let targetRef = ref;
+    if (!targetRef) {
+      const g = qd
+        .prepare(
+          `SELECT material_ref ref FROM questions
+           WHERE module='资料分析' AND material_ref!='' AND material_ref NOT IN (${exclIds.length ? exclIds.map(() => "?").join(",") : "''"})
+           GROUP BY material_ref HAVING COUNT(*)>=2 ORDER BY RANDOM() LIMIT 1`
+        )
+        .get(...exclIds) as { ref: string } | undefined;
+      if (!g) return json({ mode, count: 0, cards: [] });
+      targetRef = g.ref;
+    }
+    const onlyDue = g.get("review") === "1";
+    if (onlyDue) {
+      rows = qd
+        .prepare(
+          `SELECT q.* ${J} WHERE q.material_ref=? AND s.status!='new' AND s.due<=?${exclClause} ORDER BY s.due ASC LIMIT ?`
+        )
+        .all(uid, targetRef, today, ...exclIds, size) as QuestionRow[];
+    } else {
+      rows = qd
+        .prepare(`SELECT q.* FROM questions q WHERE q.material_ref=?${exclClause} ORDER BY q.id LIMIT ?`)
+        .all(targetRef, ...exclIds, size) as QuestionRow[];
+    }
   } else if (mode === "fav") {
     rows = qd
       .prepare(
