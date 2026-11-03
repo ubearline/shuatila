@@ -81,6 +81,47 @@ def parse_options(block):
         opts.append({"key": key, "label": plain, "html": norm_html(html), "is_answer": bool(is_ans)})
     return opts
 
+REF_RE = re.compile(r"(以上|上述|上面|材料|阅读下面|文中|画线|公文|文章|图中|这则|该公文|如下|下述|案例|所给|题意|本文|这段|该文)")
+
+def material_scope(module, qs):
+    """材料管辖范围判定（修复 cur_mat 越界延续 bug）。
+
+    qs: [(category, stem_plain), ...] —— 材料之后的题目序列（到下一个材料/卷尾）
+    返回: 该材料实际管辖的题数 keep。
+
+    - 资料分析：材料管到下一材料/卷尾（keep = len(qs)，由调用方跳过判定）
+    - 其他模块，先到先停：
+      1) 连续 3 题分类 != 首题分类（容忍 1-2 个上游标签噪音）
+      2) 连续 2 题题干无引用词 且 组 >6 题（上海/北京常识大组模式）
+      3) 上限：判断推理 10，其余 30（容纳上海 12-30 题真实大组）
+    """
+    if not qs:
+        return 0
+    if module == "资料分析":
+        return len(qs)
+    cap = 10 if module == "判断推理" else 30
+    first = qs[0][0]
+    keep = 0
+    diff_run = 0
+    noref_run = 0
+    for cat, stem in qs:
+        if keep >= cap:
+            break
+        if cat != first:
+            diff_run += 1
+            if diff_run >= 3:
+                break
+        else:
+            diff_run = 0
+        if len(qs) > 6 and not REF_RE.search(stem):
+            noref_run += 1
+            if noref_run >= 2:
+                break
+        else:
+            noref_run = 0
+        keep += 1
+    return keep
+
 def main():
     if not os.path.isdir(VAULT_ROOT):
         print("[ERR] 找不到原始题库:", VAULT_ROOT)
@@ -123,22 +164,50 @@ def main():
         year = str(fm.get("年份", ""))
         module = fm.get("模块", "") or rel.split("/")[0][3:]
 
-        # 切分小节：材料 / 题目
+        # 预切分：head -> (kind, text, qid, category)
         heads = list(HEAD_RE.finditer(raw))
-        cur_mat = ""
-        cur_mat_id = ""
+        units = []
         for idx, h in enumerate(heads):
             end = heads[idx + 1].start() if idx + 1 < len(heads) else len(raw)
             seg = raw[h.end():end]
             if h.group(2).startswith("材料"):
-                cur_mat = norm_html(clean_wiki(seg.strip()))
-                cur_mat_id = f"{paper}#{h.group(2)}"
+                units.append(("mat", seg, "", ""))
+            else:
+                units.append(("q", seg, h.group(3) or "", (h.group(4) or "").strip()))
+
+        # 计算每个材料的管辖题数并预绑定（修 cur_mat 越界延续 bug）
+        mat_of_q = [None] * len(units)   # unit idx -> (mat_text, mat_id) or None
+        for ui, (kind, seg, _, _) in enumerate(units):
+            if kind != "mat":
                 continue
-            qid = h.group(3)
+            qs_after = []
+            q_idx = []
+            for uj in range(ui + 1, len(units)):
+                k2, s2, qid2, sub2 = units[uj]
+                if k2 == "mat":
+                    break
+                if not qid2:
+                    continue
+                sm = re.search(r"^\n\n(.{0,200})", s2, re.S)
+                stem_plain = re.sub(r"<[^>]+>", "", sm.group(1) if sm else s2[:200])
+                qs_after.append((sub2, stem_plain))
+                q_idx.append(uj)
+            keep = material_scope(module, qs_after)
+            mat_text = norm_html(clean_wiki(seg.strip()))
+            mat_label = heads[ui].group(2).split("\u3000")[0]
+            mat_id = f"{paper}#{mat_label}"
+            for uj in q_idx[:keep]:
+                mat_of_q[uj] = (mat_text, mat_id)
+
+        for ui, (kind, seg, qid, sub) in enumerate(units):
+            if kind == "mat":
+                continue
             if not qid:
                 n_skip += 1
                 continue
-            sub = (h.group(4) or "").strip()
+            bound = mat_of_q[ui]
+            cur_mat = bound[0] if bound else ""
+            cur_mat_id = bound[1] if bound else ""
             opts = parse_options(seg)
             am = ANS_RE.search(seg)
             answer = am.group(1) if am else ""
