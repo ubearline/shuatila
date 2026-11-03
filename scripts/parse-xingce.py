@@ -147,7 +147,7 @@ def main():
             pm = re.search(r"\*\*官方解析\*\*\s*\n+", seg[am.end():] if am else seg)
             if pm:
                 tail = (seg[am.end():] if am else seg)[pm.end():]
-                analysis = clean_wiki(tail).strip()
+                analysis = norm_html(clean_wiki(tail)).strip()
             # 题干：小节开头到第一个选项行
             om = OPT_RE.search(seg)
             stem = norm_html(clean_wiki(seg[:om.start()]).strip()) if om else ""
