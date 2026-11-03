@@ -1,6 +1,6 @@
 {
   "name": "shuatila",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "private": true,
   "packageManager": "pnpm@10.16.1",
   "description": "考公刷题系统：27,473 道行测真题，SM-2 间隔重复 / 模拟考试 / 错题本",
