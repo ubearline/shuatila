@@ -12,9 +12,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:assemble": "node scripts/assemble-db.mjs",
+    "db:split": "node scripts/split-db.mjs",
     "db:import": "python scripts/parse.py",
     "db:images": "python scripts/img2webp.py",
-    "db:reset": "python scripts/parse.py --fresh"
+    "db:reset": "python scripts/parse.py --fresh",
+    "assets:verify": "node scripts/verify-assets.mjs",
+    "sync:upstream": "node scripts/sync-upstream.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

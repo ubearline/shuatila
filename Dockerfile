@@ -1,5 +1,7 @@
 # ---------- 阶段 1：构建 ----------
-# 组装题库分卷 + 编译 Next 产物
+# 组装题库分卷 + 编译 Next 产物。
+# 注意：图片（data/images）不进 builder —— 它体积大且与源码变更无关，
+# 由运行阶段直接从仓库上下文 COPY，避免每次改代码都重传 170MB+。
 FROM node:20-alpine AS builder
 WORKDIR /app
 # better-sqlite3 原生模块：预编译失败时需本地编译工具
@@ -9,8 +11,15 @@ RUN corepack enable && corepack prepare pnpm@10.16.1 --activate
 # 先装依赖（利用层缓存；pnpm-lock.yaml 决定可复现安装）
 COPY package.json pnpm-lock.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
-# 拷贝源码 + 题库分卷
-COPY . .
+# 逐项拷贝源码（不用 COPY . .，否则任何源码改动都会让包含分卷的大层失效）
+COPY app ./app
+COPY components ./components
+COPY lib ./lib
+COPY public ./public
+COPY tests ./tests
+COPY scripts ./scripts
+COPY db ./db
+COPY next.config.mjs tsconfig.json ./
 # 合并分卷 → data/kaogong.db（纯二进制拼接，秒级；不重头解析题库）
 RUN node scripts/assemble-db.mjs && node -e "const D=require('better-sqlite3');const db=new D('data/kaogong.db',{readonly:true});console.log('q:',db.prepare('SELECT COUNT(*) n FROM questions').get().n)"
 # 编译
@@ -28,10 +37,15 @@ ENV NODE_ENV=production \
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
-# 只读题库库 + 分卷/装配脚本（数据卷缺失时可按需重建）
+# 只读题库库 + 分卷/装配/校验脚本（数据卷缺失时可按需重建）
 COPY --from=builder /app/data/kaogong.db ./data/kaogong.db
 COPY --from=builder /app/db ./db
 COPY --from=builder /app/scripts/assemble-db.mjs ./scripts/assemble-db.mjs
+COPY --from=builder /app/scripts/verify-assets.mjs ./scripts/verify-assets.mjs
+# 题库图片：直接来自仓库（data/images 已入库），不再依赖上游
+COPY data/images ./data/images
+# 构建期断言：题库 + 图片都在，缺图直接让构建失败，而不是产出满是破图的镜像
+RUN node scripts/verify-assets.mjs
 # 用户数据落持久卷 /data（users.db）
 VOLUME /data
 EXPOSE 3000

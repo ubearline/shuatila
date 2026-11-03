@@ -26,6 +26,9 @@ jobs:
       - name: Assemble question bank (from committed parts)
         run: pnpm run db:assemble
 
+      - name: Verify assets (db parts + question images)
+        run: pnpm run assets:verify
+
       - name: Type check
         run: pnpm run typecheck
 

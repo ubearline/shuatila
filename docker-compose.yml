@@ -17,7 +17,8 @@ services:
     volumes:
       # 关键：用户数据（账号 / srs / 笔记 / 收藏 / 模考）持久化，更新镜像不丢
       - shuatila-data:/data
-      # 可选：如需随镜像外更新配图，可挂载一个含 90-图片 的目录覆盖镜像内 IMAGES_DIR
+      # 题库图片已随仓库入库、构建期打进镜像（/app/data/images），无需挂载。
+      # 若想临时覆盖镜像内配图调试，可取消下一行注释：
       # - ./data/images:/app/data/images:ro
 volumes:
   shuatila-data:

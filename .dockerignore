@@ -1,8 +1,15 @@
 # Docker build 上下文排除
+# 注意：data/images 必须留在上下文里（图片已入库，运行阶段 COPY 进镜像），不要在此排除
 node_modules
 .next
-data/images
 data/kaogong.db
 data/users.db
+data/users.db-shm
+data/users.db-wal
 .git
+.github
+.workbuddy-ai
+.creative-design
 *.md
+tsconfig.tsbuildinfo
+*.log

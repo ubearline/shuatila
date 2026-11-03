@@ -8,7 +8,11 @@ Next.js + better-sqlite3 实现的考公刷题平台（原「考公脑库」）�
 |---|---|---|
 | `kaogong.db` | 只读题库：27,506 题、58,890 真题出现记录、1,578 份材料 | 运行时 `data/`，由分卷 `db/kaogong.db.part-*` 拼接 |
 | `users.db` | 用户数据：账号 / SRS 进度 / 评测记录 / 笔记 / 收藏 / 疑问 / 考试历史 / 设置 | `data/`，可 `USERS_DB_PATH` 覆盖，Docker 挂持久卷 |
-| `data/images/` | 39,692 张 WebP 配图（题目图 + 公式图） | 运行时生成/挂载 |
+| `data/images/` | 39,692 张 WebP 配图（题目图 + 公式图，87 MB） | **入库**，构建期打进镜像 |
+
+> 资产策略：**镜像只基于本仓库构建，不依赖上游**。题库分卷（`db/`）与题库图片（`data/images/`）都提交在 git 里；
+> 上游更新不会自动进镜像，需手动跑一次 `pnpm sync:upstream` 把资产同步进仓库并提交（见下节）。
+
 
 跨库 JOIN 通过 SQLite `ATTACH DATABASE ... AS users` 实现（题库连接上把用户库附加为 `users`），路由 SQL 以 `users.srs` / `users.favorites` / `users.doubt_status` 前缀访问用户态。
 
@@ -17,17 +21,36 @@ Next.js + better-sqlite3 实现的考公刷题平台（原「考公脑库」）�
 ```bash
 pnpm install            # 首次；node-linker=hoisted（见 .npmrc）
 pnpm db:assemble        # 拼接 db/kaogong.db.part-* -> data/kaogong.db（秒级）
-pnpm db:images          # （可选）首次生成 data/images WebP 配图
 pnpm dev                # http://localhost:3000
 ```
 
-> 题库分卷（5×~30MB）已入库；`db:assemble` 只做字节拼接，**不重新解析题库**，所以本地启动和 CI 构建都很快。`scripts/parse.py`（增量解析）与 `scripts/img2webp.py`（图片转码）保留在 `scripts/`，供**更新题库**时使用（非首启所需）。
+> 题库分卷（5×~30MB）与题库图片（`data/images`，39,692 张）均已入库；`db:assemble` 只做字节拼接，
+> **不重新解析题库**，所以本地启动和 CI 构建都很快。克隆仓库即有图，无需再跑 `db:images`。
 
-## 题库更新管线（保留）
+## 上游同步管线（手动触发）
 
-- `pnpm db:import` → `scripts/parse.py`：增量解析源数据（去重，新题写入 `data/kaogong.db`），产出路径 `/90-图片/…` 图片引用。
-- `pnpm db:images` → `scripts/img2webp.py`：把 `90-图片/` 原图批量转 WebP 到 `data/images/`。
-- 更新后：`scripts/split-db.mjs`（如有）重新切分 `data/kaogong.db` 为 `db/kaogong.db.part-*` 并提交，保证小文件入库、可发布。
+镜像不依赖上游，上游更新需要显式同步进本仓库：
+
+```bash
+pnpm sync:upstream --pull --commit     # 拉上游 → 解析题库 → 图片转 WebP → 切分卷 → 校验 → 提交
+pnpm sync:upstream                     # 用本地上游内容同步，只改文件不提交
+pnpm sync:upstream --fresh             # 题库全量重建（清空旧题重解析）
+pnpm sync:upstream --no-images         # 只更新题库，不动图片
+pnpm sync:upstream --vault D:/kaogong/kaogongzhentizhengliu-main
+```
+
+管线内部依次执行：
+
+| 步骤 | 脚本 | 产物 |
+|---|---|---|
+| 1 拉上游（`--pull`） | `git -C <vault> pull --ff-only` | 上游最新 md + 原图 |
+| 2 解析真题 | `scripts/parse.py` | `data/kaogong.db`（增量，`--fresh` 全量） |
+| 3 图片转码 | `scripts/img2webp.py` | `data/images/`（WebP q88，已存在则跳过） |
+| 4 切分卷 | `scripts/split-db.mjs` | `db/kaogong.db.part-NN`（30 MiB/卷，先清旧卷） |
+| 5 校验 | `scripts/verify-assets.mjs` | 分卷/合并库字节一致、题数、图片张数 |
+| 6 入库（`--commit`） | `git add data/images db && git commit` | 资产进仓库 |
+
+同步完成后重新构建镜像即可：`docker compose up -d --build`。
 
 ## Docker 部署
 
@@ -36,8 +59,11 @@ docker compose up -d --build
 ```
 
 - `docker-compose.yml` 暴露 `3000`，用户库 `users.db` 挂载到命名卷 `shuatila-data:/data`（持久化）。
-- 题库库 + 图片在构建期由 builder 阶段 `db:assemble` 生成并拷入镜像 `/app/data/`。
+- 题库库：builder 阶段 `db:assemble` 由分卷拼接，拷入镜像 `/app/data/kaogong.db`。
+- 题库图片：运行阶段从仓库上下文 `COPY data/images` 到 `/app/data/images`（不进 builder，避免源码改动反复重传）。
+- **构建期断言**：`scripts/verify-assets.mjs` 校验题库题数与图片张数，缺图/缺卷直接构建失败，不会再产出"没有图片"的镜像。
 - 运行环境变量：`KAOGONG_DB_PATH`、`IMAGES_DIR`、`USERS_DB_PATH`（默认见 `lib/db.ts`）。
+
 
 ## 环境变量
 
