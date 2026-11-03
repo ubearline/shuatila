@@ -3,7 +3,7 @@
   "version": "1.1.1",
   "private": true,
   "packageManager": "pnpm@10.16.1",
-  "description": "考公脑库 · Next.js 重做版 — 行测真题 + SM-2 间隔重复学习系统（Docker 可部署、GitHub CI）",
+  "description": "考公刷题系统：27,473 道行测真题，SM-2 间隔重复 / 模拟考试 / 错题本",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -34,6 +34,14 @@
     "vitest": "^2.1.8"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ubearline/shuatila.git"
   }
 }
