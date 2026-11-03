@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, setToken } from "@/lib/client";
 
@@ -11,6 +11,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [allowRegister, setAllowRegister] = useState(true);
+
+  useEffect(() => {
+    api<{ allowRegister: boolean }>("/api/config")
+      .then((r) => {
+        setAllowRegister(r.allowRegister !== false);
+        if (r.allowRegister === false) setMode("login");
+      })
+      .catch(() => {});
+  }, []);
 
   const auth = async (path: string) => {
     setBusy(true);
@@ -54,9 +64,11 @@ export default function LoginPage() {
           <button className={mode === "login" ? "primary" : ""} onClick={() => setMode("login")}>
             登录
           </button>
-          <button className={mode === "register" ? "primary" : ""} onClick={() => setMode("register")}>
-            注册
-          </button>
+          {allowRegister && (
+            <button className={mode === "register" ? "primary" : ""} onClick={() => setMode("register")}>
+              注册
+            </button>
+          )}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <input placeholder="用户名" value={username} onChange={(e) => setUsername(e.target.value)} />

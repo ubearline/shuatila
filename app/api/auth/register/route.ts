@@ -1,10 +1,11 @@
 import { NextRequest } from "next/server";
 import { json, wrap } from "@/lib/api";
-import { createAccount } from "@/lib/auth";
+import { createAccount, isRegisterAllowed } from "@/lib/auth";
 import { udb } from "@/lib/db";
 
 // POST /api/auth/register  {username, password}
 export const POST = wrap<unknown>(async (req: NextRequest) => {
+  if (!isRegisterAllowed()) return json({ error: "注册已关闭，请联系管理员" }, 403);
   const { username, password } = await req.json();
   const name = String(username || "").trim();
   const pw = String(password || "");

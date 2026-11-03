@@ -17,6 +17,7 @@ export type Card = {
   ask_model: string;
   stem: string;
   options: Option[];
+  is_multi?: boolean;
   material: string;
   material_ref: string;
   answer?: string;
@@ -48,17 +49,19 @@ export function QuestionCard({
   isReview?: boolean;
 }) {
   const [revealed, setRevealed] = useState<Card | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showMaterial, setShowMaterial] = useState(true);
   const [noteText, setNoteText] = useState("");
   const [editingNote, setEditingNote] = useState(false);
 
+  const isMulti = !!card.is_multi;
+
   const doReveal = async (choice?: string) => {
     setLoading(true);
     try {
       const r = await api<{ card: Card }>("/api/question", { params: { id: String(card.id) } });
-      setPicked(choice ?? null);
+      setPicked(choice ? choice.split("") : []);
       setRevealed(r.card);
       setNoteText(r.card.note || "");
     } catch (e) {
@@ -67,6 +70,17 @@ export function QuestionCard({
       setLoading(false);
     }
   };
+
+  const togglePick = (key: string) => {
+    setPicked((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
+  };
+
+  const multiAnswerSet = (ans: string) => new Set((ans || "").toUpperCase().replace(/[^A-F]/g, "").split(""));
+  const multiCorrect = revealed ? (() => {
+    const ans = multiAnswerSet(revealed.answer || "");
+    const user = new Set(picked);
+    return ans.size > 0 && ans.size === user.size && [...ans].every((k) => user.has(k));
+  })() : false;
 
   const saveNote = async () => {
     await api("/api/note", { method: "POST", body: { id: card.id, text: noteText } });
@@ -102,10 +116,12 @@ export function QuestionCard({
       {card.options.map((o) => {
         let cls = "opt";
         if (revealed) {
-          const isAns = o.key === revealed.answer;
-          const isPicked = o.key === picked;
+          const isAns = (revealed.answer || "").toUpperCase().includes(o.key);
+          const isPicked = picked.includes(o.key);
           if (isAns) cls += " correct";
           else if (isPicked) cls += " wrong";
+        } else if (isMulti && picked.includes(o.key)) {
+          cls += " sel";
         }
         return (
           // eslint-disable-next-line jsx-a11y/no-static-element-interactions
@@ -113,7 +129,10 @@ export function QuestionCard({
             key={o.key}
             className={cls}
             onClick={() => {
-              if (!revealed && !loading) doReveal(o.key);
+              if (!revealed && !loading) {
+                if (isMulti) togglePick(o.key);
+                else doReveal(o.key);
+              }
             }}
           >
             <span className="key">{o.key}.</span>
@@ -122,9 +141,22 @@ export function QuestionCard({
         );
       })}
 
-      {!revealed && !isReview && (
+      {!revealed && !isReview && !isMulti && (
         <div className="muted" style={{ marginTop: 8 }}>
           点击选项作答
+        </div>
+      )}
+      {!revealed && !isReview && isMulti && (
+        <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span className="muted">多选题：点击选项勾选，可再点取消</span>
+          <button onClick={() => doReveal(picked.join(""))} disabled={loading || picked.length === 0}>
+            提交答案
+          </button>
+        </div>
+      )}
+      {revealed && isMulti && picked.length > 0 && (
+        <div className={multiCorrect ? "ok" : "error"} style={{ marginTop: 10, fontWeight: 700 }}>
+          {multiCorrect ? "回答正确 ✓" : "回答错误 ✗"}
         </div>
       )}
       {!revealed && isReview && (
@@ -204,7 +236,7 @@ export function QuestionCard({
                 onClick={() => {
                   onGrade(Number(g));
                   setRevealed(null);
-                  setPicked(null);
+                  setPicked([]);
                 }}
               >
                 {t}
@@ -215,7 +247,7 @@ export function QuestionCard({
             <button
               onClick={() => {
                 setRevealed(null);
-                setPicked(null);
+                setPicked([]);
                 onNext();
               }}
               className="muted"

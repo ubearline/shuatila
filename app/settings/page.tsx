@@ -11,12 +11,16 @@ export default function SettingsPage() {
   const [upUser, setUpUser] = useState("");
   const [upPw, setUpPw] = useState("");
   const [msg, setMsg] = useState("");
+  const [allowRegister, setAllowRegister] = useState(true);
 
   useEffect(() => {
     api<{ ok: boolean; id: string; name: string; anon?: boolean }>("/api/auth/me").then((r) => {
       if (r.ok) setMe({ id: r.id, name: r.name, anon: r.anon });
     });
     api<{ goal: number }>("/api/streak").then((r) => setGoal(r.goal)).catch(() => {});
+    api<{ allowRegister: boolean }>("/api/config")
+      .then((r) => setAllowRegister(r.allowRegister !== false))
+      .catch(() => {});
   }, []);
 
   const saveGoal = async () => {
@@ -49,7 +53,7 @@ export default function SettingsPage() {
       <div className="card" style={{ maxWidth: 520 }}>
         <h2>账号</h2>
         <div className="muted">用户名：{me?.name}</div>
-        {me?.anon && (
+        {me?.anon && allowRegister && (
           <div style={{ marginTop: 12 }}>
             <p className="muted">当前为游客模式，绑定用户名密码可升级为正式账号（数据不丢）：</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

@@ -24,7 +24,7 @@ export const GET = wrap<unknown>(async (req: NextRequest) => {
   const ea = [...args, ...exclIds];
   const J = "FROM questions q LEFT JOIN users.srs s ON s.qid=q.qid AND s.user_id=?";
   const NEW = "(s.qid IS NULL OR s.status='new')";
-  const exclClause = exclIds.length ? ` AND q.qid NOT IN (${exclIds.map(() => "?").join(",")})` : "";
+  const exclClause = exclIds.length ? ` AND q.id NOT IN (${exclIds.map(() => "?").join(",")})` : "";
   const today = todayStr();
   const qd = qdb();
 
@@ -39,8 +39,8 @@ export const GET = wrap<unknown>(async (req: NextRequest) => {
     }
   } else if (mode === "material") {
     rows = qd
-      .prepare(`SELECT * FROM questions WHERE material_ref=? ORDER BY id LIMIT ?`)
-      .all(ref, size) as QuestionRow[];
+      .prepare(`SELECT q.* FROM questions q WHERE q.material_ref=?${exclClause} ORDER BY q.id LIMIT ?`)
+      .all(ref, ...exclIds, size) as QuestionRow[];
   } else if (mode === "fav") {
     rows = qd
       .prepare(

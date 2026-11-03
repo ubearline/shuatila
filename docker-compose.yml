@@ -12,6 +12,8 @@ services:
       - USERS_DB_PATH=/data/users.db
       - KAOGONG_DB_PATH=/app/data/kaogong.db
       - IMAGES_DIR=/app/data/images
+      # 注册开关：1 允许开放注册（默认）；0 / false / off 禁用注册（登录页隐藏注册、拒绝注册与游客升级）
+      - ALLOW_REGISTER=1
     volumes:
       # 关键：用户数据（账号 / srs / 笔记 / 收藏 / 模考）持久化，更新镜像不丢
       - shuatila-data:/data

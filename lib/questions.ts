@@ -52,6 +52,7 @@ export type Card = {
   ask_model: string;
   stem: string;
   options: Option[];
+  is_multi?: boolean;
   material: string;
   material_ref: string;
   answer?: string;
@@ -159,6 +160,8 @@ export function cleanCard(row: QuestionRow, reveal: boolean, uid?: string): Card
     ask_model: row.ask_model,
     stem: reveal ? row.stem : maskAnswerLeak(row.stem),
     options: parseOptions(row.options),
+    // 多选题判据：正确答案含 2 个及以上选项字母（如 "ABD"、"ABCD"）；答题阶段也返回，供前端多选交互
+    is_multi: (row.answer || "").toUpperCase().replace(/[^A-F]/g, "").length > 1,
     material: reveal ? row.material : safeMaterial(row.material),
     material_ref: row.material_ref,
   };

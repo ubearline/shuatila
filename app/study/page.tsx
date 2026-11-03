@@ -14,6 +14,7 @@ const MODES: { id: string; label: string }[] = [
   { id: "wrong", label: "只练错题" },
   { id: "wrongredo", label: "错题重练（未稳定）" },
   { id: "fav", label: "收藏" },
+  { id: "material", label: "材料组题" },
 ];
 
 export default function StudyPage() {
@@ -32,12 +33,28 @@ export default function StudyPage() {
   const [idx, setIdx] = useState(0);
   const [done, setDone] = useState(0);
   const excludeRef = useRef<string[]>([]);
+  const autoStartedRef = useRef(false);
 
   useEffect(() => {
     api<{ modules: { module: string; n: number }[] }>("/api/bootstrap").then((r) => setModules(r.modules));
   }, []);
 
+  // 从"进入练习"类入口（带明确模式 / kadian / ref 等预选参数）跳转而来时直接开始练习，
+  // 而不是停在配置页；仅裸进入 /study 才显示配置页供选择。
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    const hasIntent =
+      cfg.mode !== "mix" || Boolean(cfg.kadian || cfg.ref || cfg.module || cfg.category);
+    if (hasIntent) start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const start = async () => {
+    if (cfg.mode === "material" && !cfg.ref) {
+      alert("材料组题需要指定材料组，请从材料列表进入。");
+      return;
+    }
     const params: Record<string, string> = { mode: cfg.mode, size: String(cfg.size) };
     if (cfg.module) params.module = cfg.module;
     if (cfg.category) params.category = cfg.category;

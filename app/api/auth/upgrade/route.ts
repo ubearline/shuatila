@@ -1,11 +1,12 @@
 import { NextRequest } from "next/server";
 import { json, wrap, getToken } from "@/lib/api";
-import { needUid, upgradeAccount } from "@/lib/auth";
+import { needUid, upgradeAccount, isRegisterAllowed } from "@/lib/auth";
 import { udb } from "@/lib/db";
 
 // POST /api/auth/upgrade  {username, password} —— 游客升级为正式账号，数据不丢
 export const POST = wrap<unknown>(async (req: NextRequest) => {
   const uid = needUid(getToken(req));
+  if (!isRegisterAllowed()) return json({ error: "注册已关闭，请联系管理员" }, 403);
   const { username, password } = await req.json();
   const name = String(username || "").trim();
   const pw = String(password || "");

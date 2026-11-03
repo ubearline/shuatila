@@ -1,6 +1,6 @@
 {
   "name": "shuatila",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "packageManager": "pnpm@10.16.1",
   "description": "考公脑库 · Next.js 重做版 — 行测真题 + SM-2 间隔重复学习系统（Docker 可部署、GitHub CI）",

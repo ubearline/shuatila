@@ -9,6 +9,17 @@ import { nowIso } from "./sm2";
 
 const ITER = 200000;
 
+/**
+ * 部署注册开关：环境变量 ALLOW_REGISTER，默认允许（保持现状）。
+ * 取值 0 / false / off / no / disabled（不区分大小写）视为禁用注册；其余或未设置视为允许。
+ * 禁用后：/api/auth/register 与游客升级 /api/auth/upgrade 均返回 403；游客匿名模式不受影响。
+ */
+export function isRegisterAllowed(): boolean {
+  const v = (process.env.ALLOW_REGISTER || "").trim().toLowerCase();
+  if (!v) return true;
+  return !["0", "false", "off", "no", "disabled"].includes(v);
+}
+
 export function pwHash(pw: string): string {
   const salt = crypto.randomBytes(16);
   const dk = crypto.pbkdf2Sync(pw, salt, ITER, 32, "sha256");
