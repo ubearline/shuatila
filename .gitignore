@@ -23,6 +23,9 @@ next-env.d.ts
 # build info
 tsconfig.tsbuildinfo
 
+# 上游原始题库副本（sync:upstream 下载到 .cache/upstream，体积大，不入库）
+/.cache/
+
 # env / os
 .env*
 !.env.example

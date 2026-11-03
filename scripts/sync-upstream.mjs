@@ -1,29 +1,36 @@
 #!/usr/bin/env node
 /**
- * 上游同步管线（手动触发）—— 从上游题库仓库拉取「图片 + 题库分卷」，落进本项目并提交。
+ * 上游同步管线（手动触发）—— 从「原始题库 Vault」拉取 markdown 真题与原图，重建本项目资产并提交。
  *
- * 设计原则：镜像只基于本仓库内容构建，不依赖任何上游。
- * 上游更新不会自动进镜像，必须显式跑一次本脚本，把资产
- *   - 图片  → data/images/（已入库）
- *   - 分卷  → db/kaogong.db.part-NN（已入库）
- * 更新到本仓库并提交，之后重建镜像即可。
+ * 数据源关系：
+ *   ERRRC/xingcezhenti（原始 Obsidian 题库：10-真题 / 15-材料 / 90-图片 原图）
+ *        │  解析 + 转码
+ *        ▼
+ *   本项目 ShuaTiLa：data/kaogong.db（由 db 分卷拼出）+ data/images（WebP）
+ *        │  构建期
+ *        ▼
+ *   Docker 镜像（只基于本仓库，不依赖任何外部仓库）
+ *
+ *   ※ GongkaoNaoku 是实现逻辑上的参考项目，不是本项目的数据上游，本管线不读它。
  *
  * 流程：
- *   1) （可选）git pull 上游仓库                 --pull
- *   2) 图片同步   <上游>/90-图片 → data/images   增量复制（同名同大小跳过）
- *   3) 分卷同步   <上游>/kaogong.db.part-* → db/ 替换旧分卷，并重新拼 data/kaogong.db
- *   4) 校验       scripts/verify-assets.mjs     字节一致 + 题数 + 图片张数
- *   5) （可选）git add + commit                  --commit
+ *   1) 获取上游   git clone/pull xingcezhenti 到 .cache/upstream（或用 --vault 指定已有副本 / --zip 指定快照）
+ *   2) 解析真题   scripts/parse.py        markdown → data/kaogong.db（增量；--fresh 全量重建）
+ *   3) 图片转码   scripts/img2webp.py     <vault>/90-图片 → data/images（WebP q88，已存在跳过）
+ *   4) 切分卷     scripts/split-db.mjs    data/kaogong.db → db/kaogong.db.part-NN
+ *   5) 校验       scripts/verify-assets.mjs
+ *   6) 入库       git add + commit（--commit）
  *
  * 用法：
- *   node scripts/sync-upstream.mjs                      # 同步 + 校验，不提交
- *   node scripts/sync-upstream.mjs --pull --commit      # 先更新上游再同步并提交
- *   node scripts/sync-upstream.mjs --no-images          # 只更新题库分卷
- *   node scripts/sync-upstream.mjs --no-db              # 只更新图片
- *   node scripts/sync-upstream.mjs --encode             # 图片用 img2webp.py 重新转码（源非 WebP 时用）
- *   node scripts/sync-upstream.mjs --reparse            # 额外跑 parse.py 重解析 markdown 源（需 10-真题）
- *   node scripts/sync-upstream.mjs --vault <上游路径> [--parts-dir <路径>] [--images-dir <路径>]
- *   node scripts/sync-upstream.mjs --dry-run            # 只看计划，不写文件
+ *   pnpm sync:upstream                        # 用已有/缓存的上游副本同步（不更新上游、不提交）
+ *   pnpm sync:upstream --pull --commit        # 更新上游 → 解析 → 转图 → 切分 → 校验 → 提交
+ *   pnpm sync:upstream --fresh                # 题库全量重建（清空旧题重解析）
+ *   pnpm sync:upstream --no-images            # 只更新题库，不转图
+ *   pnpm sync:upstream --no-db                # 只转图，不动题库
+ *   pnpm sync:upstream --vault <vault路径>    # 用本地已有的原始题库副本
+ *   pnpm sync:upstream --repo <git地址>       # 换上游仓库地址（或环境变量 KAOGONG_UPSTREAM_REPO）
+ *   pnpm sync:upstream --zip <zip路径或URL>   # 用仓库快照 zip（git 不通时用）
+ *   pnpm sync:upstream --dry-run              # 只看计划，不写文件
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -41,20 +48,21 @@ const opt = (n, d) => {
 const doPull = has("--pull");
 const doImages = !has("--no-images");
 const doDb = !has("--no-db");
-const encode = has("--encode");
-const reparse = has("--reparse");
+const fresh = has("--fresh");
 const doCommit = has("--commit");
 const dryRun = has("--dry-run");
+const zipArg = opt("--zip", "");
+const repo = opt("--repo", process.env.KAOGONG_UPSTREAM_REPO || "https://github.com/ERRRC/xingcezhenti.git");
 const python = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
 
-const IMG_EXTS = new Set([".webp", ".gif", ".png", ".jpg", ".jpeg"]);
+const CACHE_DIR = path.join(root, ".cache", "upstream");
+const DEFAULT_VAULT = path.join(CACHE_DIR, "xingcezhenti");
 
 const step = (t) => console.log(`\n=== ${t} ===`);
 const fail = (msg) => {
   console.error(`\n[FAIL] ${msg}`);
   process.exit(1);
 };
-const mb = (n) => (n / 1048576).toFixed(1) + " MB";
 
 function run(cmd, args, extraEnv = {}) {
   console.log(`$ ${cmd} ${args.join(" ")}`);
@@ -63,157 +71,153 @@ function run(cmd, args, extraEnv = {}) {
   if (r.status !== 0) fail(`${cmd} 退出码 ${r.status}`);
 }
 
-function walk(dir) {
-  const out = [];
+function git(args, cwd) {
+  return spawnSync("git", args, { cwd, stdio: "inherit" }).status === 0;
+}
+
+function findVaultRoot(dir) {
+  // zip 解压后可能多一层 xingcezhenti-main/
+  if (fs.existsSync(path.join(dir, "10-真题")) || fs.existsSync(path.join(dir, "90-图片"))) return dir;
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) out.push(...walk(p));
-    else if (e.isFile() && IMG_EXTS.has(path.extname(e.name).toLowerCase())) out.push(p);
+    if (fs.existsSync(path.join(p, "10-真题")) || fs.existsSync(path.join(p, "90-图片"))) return p;
   }
-  return out;
+  return null;
 }
 
-// ---------- 0. 定位上游 ----------
-function looksLikeVault(dir) {
-  try {
-    return (
-      fs.existsSync(path.join(dir, "90-图片")) ||
-      fs.existsSync(path.join(dir, "kaogong.db.part-00")) ||
-      fs.existsSync(path.join(dir, "10-真题")) ||
-      fs.existsSync(path.join(dir, "db", "kaogong.db.part-00"))
-    );
-  } catch {
-    return false;
-  }
+function unzip(zipPath, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  console.log(`[zip] 解压 ${zipPath} → ${dest}`);
+  const ok =
+    process.platform === "win32"
+      ? spawnSync(
+          "powershell",
+          ["-NoProfile", "-Command", `Expand-Archive -Force -Path '${zipPath}' -DestinationPath '${dest}'`],
+          { stdio: "inherit" }
+        ).status === 0
+      : spawnSync("unzip", ["-q", "-o", zipPath, "-d", dest], { stdio: "inherit" }).status === 0;
+  if (!ok) fail(`解压失败：${zipPath}（Windows 需 PowerShell，其他平台需 unzip）`);
+  return findVaultRoot(dest);
 }
 
-function discoverVault() {
-  const parent = path.dirname(root);
-  const candidates = [path.join(parent, "kaogongzhentizhengliu-main")];
-  // 父目录下两层内扫描含 90-图片 / 分卷 / 10-真题 的目录
-  for (const a of fs.readdirSync(parent, { withFileTypes: true }).filter((d) => d.isDirectory())) {
-    const p1 = path.join(parent, a.name);
-    candidates.push(p1);
-    try {
-      for (const b of fs.readdirSync(p1, { withFileTypes: true }).filter((d) => d.isDirectory())) {
-        candidates.push(path.join(p1, b.name));
+// ---------- 0. 依赖预检 ----------
+if (spawnSync(python, ["-c", "import sys"], { stdio: "ignore" }).status !== 0) {
+  fail(`找不到 Python 解释器（${python}）。可用 PYTHON=<路径> 指定。`);
+}
+if (doImages && spawnSync(python, ["-c", "import PIL"], { stdio: "ignore" }).status !== 0) {
+  fail(`图片转码需要 Pillow：${python} -m pip install Pillow`);
+}
+
+// ---------- 1. 获取上游 ----------
+step("1/6 获取上游原始题库（xingcezhenti）");
+let vault = opt("--vault", process.env.KAOGONG_VAULT || "");
+if (vault) vault = path.resolve(vault);
+else if (fs.existsSync(DEFAULT_VAULT)) vault = DEFAULT_VAULT;
+
+if (zipArg) {
+  let zipPath = zipArg;
+  if (/^https?:\/\//i.test(zipArg)) {
+    zipPath = path.join(CACHE_DIR, "xingcezhenti.zip");
+    if (!fs.existsSync(zipPath) || doPull) {
+      if (dryRun) {
+        console.log(`[DRY] 下载 ${zipArg}`);
+      } else {
+        fs.mkdirSync(CACHE_DIR, { recursive: true });
+        console.log(`[下载] ${zipArg} → ${zipPath}`);
+        const res = await fetch(zipArg);
+        if (!res.ok) fail(`下载失败：HTTP ${res.status}`);
+        fs.writeFileSync(zipPath, Buffer.from(await res.arrayBuffer()));
       }
-    } catch {
-      /* 无权限等忽略 */
     }
   }
-  return candidates.find(looksLikeVault) || null;
+  if (!fs.existsSync(zipPath)) fail(`zip 不存在：${zipPath}`);
+  const found = dryRun ? DEFAULT_VAULT : unzip(zipPath, path.join(CACHE_DIR, "snapshot"));
+  vault = found || vault || DEFAULT_VAULT;
+} else if (vault && fs.existsSync(vault)) {
+  if (!doPull) {
+    console.log("[SKIP] 未指定 --pull，使用副本当前内容");
+  } else if (fs.existsSync(path.join(vault, ".git"))) {
+    console.log(`[更新] git pull --ff-only：${vault}`);
+    if (!dryRun && !git(["pull", "--ff-only"], vault)) fail("git pull 失败（副本有本地改动或非快进），请手动处理");
+  } else {
+    console.log("[SKIP] 该副本不是 git 仓库，跳过更新");
+  }
+} else {
+  if (dryRun) {
+    console.log(`[DRY] 将 git clone --depth 1 ${repo} → ${DEFAULT_VAULT}`);
+    vault = DEFAULT_VAULT;
+  } else {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    console.log(`[克隆] ${repo} → ${DEFAULT_VAULT}（浅克隆，含原图，可能要几分钟）`);
+    if (!git(["clone", "--depth", "1", repo, DEFAULT_VAULT], root)) {
+      fail(
+        `浅克隆失败。可换地址：--repo <地址> 或 KAOGONG_UPSTREAM_REPO=<地址>；\n` +
+          `  或手动下载仓库 zip 后用 --zip <路径或URL>。`
+      );
+    }
+    vault = DEFAULT_VAULT;
+  }
 }
 
-const explicitVault = opt("--vault", process.env.KAOGONG_VAULT || "");
-let vault = explicitVault ? path.resolve(explicitVault) : discoverVault();
-if (!vault) {
-  fail("未能定位上游仓库，请用 --vault <路径> 或环境变量 KAOGONG_VAULT 指定（需含 90-图片 或 kaogong.db.part-*）");
+if (!fs.existsSync(vault)) {
+  if (dryRun) console.log(`[DRY] 上游副本尚未下载：${vault}`);
+  else fail(`上游副本不存在：${vault}（用 --vault 指定，或不指定让它自动克隆）`);
 }
-if (!fs.existsSync(vault)) fail(`找不到上游仓库：${vault}`);
-console.log(`[上游] ${vault}`);
+const vaultRoot = (fs.existsSync(vault) ? findVaultRoot(vault) : null) || vault;
+console.log(`[上游] ${vaultRoot}`);
 console.log(`[项目] ${root}${dryRun ? "（--dry-run，不写文件）" : ""}`);
-
-// ---------- 1. 可选：拉取上游 ----------
-step("1/5 拉取上游仓库");
-if (!doPull) {
-  console.log("[SKIP] 未指定 --pull，使用本地上游当前内容");
-} else if (!fs.existsSync(path.join(vault, ".git"))) {
-  console.log("[SKIP] 上游不是 git 仓库（无 .git），跳过 pull");
-} else {
-  const r = spawnSync("git", ["-C", vault, "pull", "--ff-only"], { stdio: "inherit" });
-  if (r.status !== 0) fail("git pull 失败（可能上游本地有改动或非快进），请手动处理后重试");
-}
-
-// ---------- 2. 图片 ----------
-step("2/5 图片 → data/images");
-const imagesDir = path.join(root, "data", "images");
-if (!doImages) {
-  console.log("[SKIP] --no-images");
-} else if (encode) {
-  // 源图非 WebP（png/jpg/gif）时用 Pillow 转码
-  if (dryRun) console.log("[DRY] 将运行 img2webp.py");
-  else run(python, [path.join(root, "scripts", "img2webp.py")], { KAOGONG_VAULT: vault });
-} else {
-  const src = path.resolve(opt("--images-dir", path.join(vault, "90-图片")));
-  if (!fs.existsSync(src)) fail(`上游图片目录不存在：${src}（可用 --images-dir 指定）`);
-  const files = walk(src);
-  let added = 0;
-  let skipped = 0;
-  let bytes = 0;
-  for (const f of files) {
-    const rel = path.relative(src, f);
-    const dst = path.join(imagesDir, rel);
-    if (fs.existsSync(dst) && fs.statSync(dst).size === fs.statSync(f).size) {
-      skipped += 1;
-      continue;
-    }
-    added += 1;
-    bytes += fs.statSync(f).size;
-    if (!dryRun) {
-      fs.mkdirSync(path.dirname(dst), { recursive: true });
-      fs.copyFileSync(f, dst);
-    }
+if (!dryRun) {
+  if (doDb && !fs.existsSync(path.join(vaultRoot, "10-真题"))) {
+    fail(`上游副本里没有 10-真题/：${vaultRoot}（原始题库 Vault 应含 10-真题 / 15-材料 / 90-图片）`);
   }
-  console.log(`[图片] 源 ${files.length} 张；新增/更新 ${added} 张${added ? `（${mb(bytes)}）` : ""}，跳过 ${skipped} 张`);
+  if (doImages && !fs.existsSync(path.join(vaultRoot, "90-图片"))) {
+    fail(`上游副本里没有 90-图片/：${vaultRoot}`);
+  }
 }
 
-// ---------- 3. 题库分卷 ----------
-step("3/5 分卷 → db/kaogong.db.part-NN");
-const partsDir = path.join(root, "db");
+// ---------- 2. 解析题库 ----------
+step(`2/6 解析真题 → data/kaogong.db${fresh ? "（全量重建）" : "（增量）"}`);
 if (!doDb) {
   console.log("[SKIP] --no-db");
-} else if (reparse) {
-  if (dryRun) console.log("[DRY] 将运行 parse.py 与 split-db.mjs");
-  else {
-    run(python, [path.join(root, "scripts", "parse.py")], { KAOGONG_VAULT: vault });
-    run(process.execPath, [path.join(root, "scripts", "split-db.mjs")]);
-  }
+} else if (dryRun) {
+  console.log("[DRY] 将运行 parse.py");
 } else {
-  let srcDir = opt("--parts-dir", "");
-  if (srcDir) srcDir = path.resolve(srcDir);
-  else if (fs.existsSync(path.join(vault, "db", "kaogong.db.part-00"))) srcDir = path.join(vault, "db");
-  else srcDir = vault;
-
-  const parts = fs.existsSync(srcDir)
-    ? fs.readdirSync(srcDir).filter((f) => f.startsWith("kaogong.db.part-")).sort()
-    : [];
-  if (parts.length) {
-    console.log(`[分卷] 源 ${srcDir}（${parts.length} 个）`);
-    if (!dryRun) {
-      const old = fs
-        .readdirSync(partsDir)
-        .filter((f) => f.startsWith("kaogong.db.part-"))
-        .map((f) => path.join(partsDir, f));
-      for (const f of old) fs.rmSync(f, { force: true });
-      for (const p of parts) fs.copyFileSync(path.join(srcDir, p), path.join(partsDir, p));
-    }
-    console.log(`[分卷] 已同步 ${parts.length} 个 → db/`);
-  } else if (fs.existsSync(path.join(srcDir, "kaogong.db"))) {
-    // 上游给的是整库：拷进来后切分
-    console.log(`[分卷] 上游为整库，拷贝到 data/kaogong.db 后切分`);
-    if (!dryRun) {
-      fs.copyFileSync(path.join(srcDir, "kaogong.db"), path.join(root, "data", "kaogong.db"));
-      run(process.execPath, [path.join(root, "scripts", "split-db.mjs")]);
-    }
-  } else {
-    fail(`上游既没有 kaogong.db.part-* 也没有 kaogong.db：${srcDir}（可用 --parts-dir 指定）`);
-  }
-
-  // 重新拼本地运行时库，保证 data/kaogong.db 与新分卷一致
-  if (!dryRun) run(process.execPath, [path.join(root, "scripts", "assemble-db.mjs")]);
+  run(python, [path.join(root, "scripts", "parse.py"), ...(fresh ? ["--fresh"] : [])], {
+    KAOGONG_VAULT: vaultRoot,
+  });
 }
 
-// ---------- 4. 校验 ----------
-step("4/5 校验资产");
+// ---------- 3. 图片转码 ----------
+step("3/6 原图 90-图片 → data/images（WebP，增量）");
+if (!doImages) {
+  console.log("[SKIP] --no-images");
+} else if (dryRun) {
+  console.log("[DRY] 将运行 img2webp.py");
+} else {
+  run(python, [path.join(root, "scripts", "img2webp.py")], { KAOGONG_VAULT: vaultRoot });
+}
+
+// ---------- 4. 切分卷 ----------
+step("4/6 切分 → db/kaogong.db.part-NN");
+if (!doDb) {
+  console.log("[SKIP] --no-db");
+} else if (dryRun) {
+  console.log("[DRY] 将运行 split-db.mjs");
+} else {
+  run(process.execPath, [path.join(root, "scripts", "split-db.mjs")]);
+}
+
+// ---------- 5. 校验 ----------
+step("5/6 校验资产");
 if (dryRun) console.log("[DRY] 将运行 verify-assets.mjs");
 else run(process.execPath, [path.join(root, "scripts", "verify-assets.mjs")]);
 
-// ---------- 5. 入库 ----------
-step("5/5 入库");
+// ---------- 6. 入库 ----------
+step("6/6 入库");
 const changes = [];
-if (doImages) changes.push("data/images");
 if (doDb) changes.push("db");
+if (doImages) changes.push("data/images");
 if (!doCommit) {
   console.log("未指定 --commit。确认无误后手动提交：");
   console.log(`  git add ${changes.join(" ")} && git commit -m "chore(data): 同步上游题库与图片"`);

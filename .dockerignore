@@ -8,6 +8,7 @@ data/users.db-shm
 data/users.db-wal
 .git
 .github
+.cache
 .workbuddy-ai
 .creative-design
 *.md

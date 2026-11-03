@@ -37,6 +37,9 @@ ENV NODE_ENV=production \
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
+# 静态资源（/logo.png、/brand-icon.png 等）由 next start 运行时直接从 public/ 目录读取，
+# 不会打包进 .next；漏掉它会导致容器内 logo 404。必须随产物一并 COPY。
+COPY --from=builder /app/public ./public
 # 只读题库库 + 分卷/装配/校验脚本（数据卷缺失时可按需重建）
 COPY --from=builder /app/data/kaogong.db ./data/kaogong.db
 COPY --from=builder /app/db ./db
