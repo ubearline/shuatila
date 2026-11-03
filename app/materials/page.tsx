@@ -20,10 +20,11 @@ export default function MaterialsPage() {
     setLoading(true);
     api<Resp>("/api/materials", { params: { size: String(SIZE), page: String(p) } })
       .then((r) => {
-        setRows((prev) => (p === 0 ? r.rows : [...prev, ...r.rows]));
-        setTotal(r.total);
-        setPage(r.page);
-        if (r.rows.length < SIZE) setDone(true);
+        const rows0 = Array.isArray(r.rows) ? r.rows : [];
+        setRows((prev) => (p === 0 ? rows0 : [...prev, ...rows0]));
+        setTotal(typeof r.total === "number" ? r.total : 0);
+        setPage(typeof r.page === "number" ? r.page : 0);
+        if (rows0.length < SIZE) setDone(true);
       })
       .catch(() => {})
       .finally(() => setLoading(false));

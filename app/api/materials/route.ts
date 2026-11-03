@@ -8,12 +8,12 @@ export const GET = wrap<unknown>(async (req: NextRequest) => {
   const size = Math.max(1, Math.min(100, parseInt(req.nextUrl.searchParams.get("size") || "50", 10) || 50));
   const page = Math.max(0, parseInt(req.nextUrl.searchParams.get("page") || "0", 10) || 0);
   const db = qdb();
-  const total = db
+  const total = (db
     .prepare(
-      `SELECT COUNT(*) FROM (SELECT material_ref FROM questions
+      `SELECT COUNT(*) AS n FROM (SELECT material_ref FROM questions
        WHERE module='资料分析' AND material_ref!='' GROUP BY material_ref HAVING COUNT(*)>=2)`
     )
-    .get() as number;
+    .get() as { n: number }).n;
   const rows = db
     .prepare(
       `SELECT g.ref, g.n, q.id rep_id, q.material, q.kadian

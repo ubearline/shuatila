@@ -69,7 +69,9 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
+          # 仅 amd64：arm64 在 x86 runner 上走 QEMU 模拟，构建耗时 3-5 倍（next build 4min+），
+          # 得不偿失；如需 arm64 再启用 native arm runner 或 buildx 多平台。
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
