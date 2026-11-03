@@ -1,0 +1,40 @@
+# ===== ShuaTiLa 统一行尾规则 =====
+# 目标：文本统一以 LF 入库（库内唯一形态），TS/Python 等源码在任意平台保持 LF，
+# 避免 Windows 下 core.autocrlf=true 造成的 CRLF 来回抖动与 diff 噪声。
+# 个人机器仍可保留全局 `git config --global core.autocrlf true` 兜底其它无规则仓库。
+
+# 所有文本文件：自动判定，统一转 LF 入库（入库形态唯一）
+* text=auto
+
+# 源码：强制 LF（index 与工作区一致，覆盖全局 autocrlf）
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.mdx text eol=lf
+*.txt text eol=lf
+
+# Python 解析/转码脚本（scripts/parse.py、img2webp.py）
+*.py text eol=lf
+
+# 明确二进制（防止 text=auto 误判损坏）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+
+# SQLite 数据库：运行时库（data/*.db，已 gitignore）+ 题库分卷（db/*.db.part-*，入库）
+# 均为二进制，显式标记避免文本化 diff / 行尾归一化
+*.db binary
+*.sqlite binary
+*.db-shm binary
+*.db-wal binary
+*.db.part-* binary
