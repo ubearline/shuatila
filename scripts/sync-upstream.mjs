@@ -19,6 +19,8 @@
  *     （解析 Vault → 题库、转图 → WebP、切分卷、入库），但数据直接取自 ERRRC 的 Vault 仓库，
  *     不读 GongkaoNaoku 的任何产物。
  *   ※ parse.py 只认蒸馏后 Vault（10-真题，一题一文件）；给它 xingcezhenti 原始快照会明确报错。
+ *   ※ parse.py 同时解析 15-材料（materials 表）与 20-考点（kaodian 表：母题抽象/核心立场
+ *     + 真题反链 qids），考点反链 qid 与题库 qid 全量对应。
  *
  * 流程：
  *   1) 定位 Vault   --vault / KAOGONG_VAULT / 项目旁 ../kaogongzhentizhengliu-main /
@@ -205,7 +207,7 @@ if (!dryRun) {
   if (doDb && !fs.existsSync(path.join(vaultRoot, "10-真题"))) {
     fail(
       `Vault 里没有 10-真题/：${vaultRoot}\n` +
-        "  parse.py 需要「蒸馏后」的 Vault：10-真题/<模块>/<大类>/<题>.md + 15-材料 + 90-图片。\n" +
+        "  parse.py 需要「蒸馏后」的 Vault：10-真题/<模块>/<大类>/<题>.md + 15-材料 + 20-考点 + 90-图片。\n" +
         "  若这是 xingcezhenti 原始快照（顶层 01-…/06-…、一文件多题），现有解析器无法直接解析。"
     );
   }
