@@ -29,15 +29,22 @@ export default function Dashboard() {
   return (
     <div>
       <h1>总览</h1>
+      <div className="muted" style={{ marginBottom: 14 }}>
+        今天也保持节奏，稳扎稳打 💪
+      </div>
       <div className="grid" style={{ marginBottom: 16 }}>
-        <div className="kpi">
-          <div className="num">{s.studied_today}</div>
-          <div className="lbl">今日已练</div>
-        </div>
-        <div className="kpi">
-          <div className="num">{s.due_review}</div>
-          <div className="lbl">今日待复习</div>
-        </div>
+        <Link href="/study" style={{ display: "block" }}>
+          <div className="kpi" style={{ cursor: "pointer" }}>
+            <div className="num">{s.studied_today}</div>
+            <div className="lbl">今日已练</div>
+          </div>
+        </Link>
+        <Link href="/study?mode=review" style={{ display: "block" }}>
+          <div className="kpi" style={{ cursor: "pointer" }}>
+            <div className="num">{s.due_review}</div>
+            <div className="lbl">今日待复习</div>
+          </div>
+        </Link>
         <div className="kpi">
           <div className="num">{s.new}</div>
           <div className="lbl">未学新题</div>
@@ -46,14 +53,18 @@ export default function Dashboard() {
           <div className="num">{s.learned}</div>
           <div className="lbl">已学</div>
         </div>
-        <div className="kpi">
-          <div className="num">{s.wrong}</div>
-          <div className="lbl">错题本</div>
-        </div>
-        <div className="kpi">
-          <div className="num">{s.fav}</div>
-          <div className="lbl">收藏</div>
-        </div>
+        <Link href="/browse?only=wrong" style={{ display: "block" }}>
+          <div className="kpi" style={{ cursor: "pointer" }}>
+            <div className="num">{s.wrong}</div>
+            <div className="lbl">错题本</div>
+          </div>
+        </Link>
+        <Link href="/browse?only=fav" style={{ display: "block" }}>
+          <div className="kpi" style={{ cursor: "pointer" }}>
+            <div className="num">{s.fav}</div>
+            <div className="lbl">收藏</div>
+          </div>
+        </Link>
       </div>
 
       <div className="row" style={{ marginBottom: 16 }}>

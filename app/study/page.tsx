@@ -7,14 +7,14 @@ import { QuestionCard, Card } from "@/components/QuestionCard";
 
 type Config = { mode: string; size: number; module?: string; category?: string; kadian?: string; ref?: string; matReview?: boolean };
 
-const MODES: { id: string; label: string }[] = [
-  { id: "mix", label: "混合（错题+到期+新题）" },
-  { id: "new", label: "新题" },
-  { id: "review", label: "到期复习" },
-  { id: "wrong", label: "只练错题" },
-  { id: "wrongredo", label: "错题重练（未稳定）" },
-  { id: "fav", label: "收藏" },
-  { id: "material", label: "材料组题" },
+const MODES: { id: string; label: string; hint?: string }[] = [
+  { id: "mix", label: "混合（错题+到期+新题）", hint: "推荐的日常模式：优先错题和到期复习，不足补新题" },
+  { id: "new", label: "新题", hint: "只做没学过的题，适合首轮过知识点" },
+  { id: "review", label: "到期复习", hint: "按遗忘曲线到期的题，今天该复习的都在这" },
+  { id: "wrong", label: "只练错题", hint: "全量回顾所有历史错题（含已掌握的），适合考前扫尾" },
+  { id: "wrongredo", label: "错题重练（未稳定）", hint: "只练错题本中还没连续做对 2 次的题，做稳后自动毕业" },
+  { id: "fav", label: "收藏", hint: "只练收藏过的题" },
+  { id: "material", label: "材料组题", hint: "随机抽一组资料分析材料成组练习，贴近考场节奏" },
 ];
 
 export default function StudyPage() {
@@ -29,6 +29,7 @@ export default function StudyPage() {
     ref: sp.get("ref") || undefined,
   });
   const [started, setStarted] = useState(false);
+  const [emptyHit, setEmptyHit] = useState(false);
   const [queue, setQueue] = useState<Card[]>([]);
   const [idx, setIdx] = useState(0);
   const [done, setDone] = useState(0);
@@ -61,6 +62,7 @@ export default function StudyPage() {
     setQueue(r.cards);
     setIdx(0);
     setStarted(true);
+    if (r.cards.length === 0) setEmptyHit(true);
   };
 
   const more = async () => {
@@ -106,6 +108,19 @@ export default function StudyPage() {
     return (
       <div>
         <h1>开始练习</h1>
+        {emptyHit && (
+          <div className="empty" style={{ marginBottom: 14 }}>
+            <div className="icon">📭</div>
+            <div>这个模式下暂时没有可练的题</div>
+            <div className="muted" style={{ marginTop: 4 }}>
+              {cfg.mode === "review" && "还没有到期的复习题——先练些新题吧"}
+              {cfg.mode === "wrong" && "错题本是空的，太棒了！去练新题吧"}
+              {cfg.mode === "wrongredo" && "没有未稳定的错题——去练新题或做复习吧"}
+              {cfg.mode === "fav" && "还没有收藏题，做题时点「收藏 ☆」即可加入"}
+              {cfg.mode === "material" && "材料组加载失败，请重试"}
+            </div>
+          </div>
+        )}
         <div className="card" style={{ maxWidth: 560 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <label>
@@ -122,6 +137,11 @@ export default function StudyPage() {
                 ))}
               </select>
             </label>
+            {MODES.find((m) => m.id === cfg.mode)?.hint && (
+              <div className="muted" style={{ marginTop: -6, fontSize: 12.5 }}>
+                💡 {MODES.find((m) => m.id === cfg.mode)?.hint}
+              </div>
+            )}
             <label>
               模块
               <select
@@ -181,10 +201,11 @@ export default function StudyPage() {
       {c ? (
         <QuestionCard card={c} onGrade={grade} onNext={next} isReview={cfg.mode === "review"} />
       ) : (
-        <div className="card">
-          本批题目已做完。
-          <div className="row" style={{ marginTop: 10 }}>
-            <button onClick={more}>继续加载</button>
+        <div className="empty">
+          <div className="icon">🎉</div>
+          <div>这一批做完了，干得漂亮！</div>
+          <div className="row" style={{ marginTop: 12, justifyContent: "center" }}>
+            <button className="primary" onClick={more}>继续加载</button>
             <button onClick={() => setStarted(false)}>返回配置</button>
           </div>
         </div>

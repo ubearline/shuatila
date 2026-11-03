@@ -105,8 +105,12 @@ export function QuestionCard({
       </div>
       {card.material && (
         <div style={{ marginBottom: 8 }}>
-          <button onClick={() => setShowMaterial((v) => !v)} className="muted" style={{ background: "none" }}>
-            {showMaterial ? "收起材料 ▴" : "展开材料 ▾"}
+          <button
+            onClick={() => setShowMaterial((v) => !v)}
+            className="ghost"
+            style={{ fontSize: 13, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 999 }}
+          >
+            {showMaterial ? "▴ 收起材料" : "▾ 展开材料"}
           </button>
           {showMaterial && <Html html={card.material} />}
         </div>
@@ -142,8 +146,8 @@ export function QuestionCard({
       })}
 
       {!revealed && !isReview && !isMulti && (
-        <div className="muted" style={{ marginTop: 8 }}>
-          点击选项作答
+        <div className="muted" style={{ marginTop: 8, fontSize: 12.5 }}>
+          💡 点击选项作答，答完自动显示答案
         </div>
       )}
       {!revealed && !isReview && isMulti && (
@@ -168,10 +172,8 @@ export function QuestionCard({
       {revealed && (
         <div style={{ marginTop: 14, borderTop: "1px solid #2a3240", paddingTop: 12 }}>
           <div className="row" style={{ marginBottom: 8 }}>
-            <span className="tag" style={{ background: "#173623", color: "#86efac" }}>
-              答案 {revealed.answer}
-            </span>
-            <button onClick={toggleFav}>{revealed.fav ? "取消收藏 ★" : "收藏 ☆"}</button>
+            <span className="tag green">答案 {revealed.answer}</span>
+            <button onClick={toggleFav}>{revealed.fav ? "★ 已收藏" : "☆ 收藏"}</button>
             <button onClick={() => setEditingNote((v) => !v)}>📝 笔记</button>
           </div>
           {editingNote && (
@@ -226,10 +228,10 @@ export function QuestionCard({
           <div className="row" style={{ marginTop: 14 }}>
             <span className="muted">自评记忆强度：</span>
             {[
-              [1, "忘记"],
-              [3, "困难"],
-              [4, "一般"],
-              [5, "熟悉"],
+              [1, "😵 忘记"],
+              [3, "😅 困难"],
+              [4, "🙂 一般"],
+              [5, "😄 熟悉"],
             ].map(([g, t]) => (
               <button
                 key={g}
@@ -238,6 +240,7 @@ export function QuestionCard({
                   setRevealed(null);
                   setPicked([]);
                 }}
+                className={Number(g) >= 4 ? "" : "danger"}
               >
                 {t}
               </button>
@@ -250,10 +253,10 @@ export function QuestionCard({
                 setPicked([]);
                 onNext();
               }}
-              className="muted"
-              style={{ background: "none" }}
+              className="ghost"
+              style={{ fontSize: 13 }}
             >
-              跳过/下一题 →
+              跳过，直接下一题 →
             </button>
           </div>
         </div>

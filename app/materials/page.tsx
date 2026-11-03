@@ -51,16 +51,21 @@ export default function MaterialsPage() {
           </Link>
         </div>
       ))}
+      {rows.length === 0 && !loading && (
+        <div className="empty">
+          <div className="icon">📚</div>
+          <div>暂无材料组数据</div>
+        </div>
+      )}
       {!done && rows.length > 0 && (
         <button
           onClick={() => load(page + 1)}
           disabled={loading}
-          style={{ margin: "14px auto", display: "block", padding: "8px 24px" }}
+          style={{ margin: "18px auto", display: "flex", padding: "10px 28px" }}
         >
           {loading ? "加载中…" : `加载更多（已显示 ${rows.length}/${total}）`}
         </button>
       )}
-      {rows.length === 0 && !loading && <div className="muted">暂无数据</div>}
     </div>
   );
 }

@@ -158,6 +158,9 @@ export default function ExamPage() {
             <label>限时（分钟）
               <input type="number" min={5} max={180} value={minutes} onChange={(e) => setMinutes(Number(e.target.value) || 30)} style={{ marginLeft: 8, width: 70 }} />
             </label>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              💡 整卷限时作答，交卷后服务端判分，可回看每题解析；成绩计入历史
+            </div>
             <button className="primary" onClick={start}>开始组卷</button>
           </div>
         </div>
@@ -165,25 +168,32 @@ export default function ExamPage() {
 
       {phase === "running" && (
         <div>
-          <div className="row" style={{ marginBottom: 10 }}>
-            <span className="tag" style={{ background: elapsed >= deadline ? "#3f1d1d" : "", color: elapsed >= deadline ? "#fca5a5" : "" }}>
-              倒计时 {mm}:{ss} / {minutes}:00
+          <div className="row" style={{ marginBottom: 10, position: "sticky", top: 0, zIndex: 10, background: "rgba(14,17,22,0.92)", backdropFilter: "blur(8px)", padding: "8px 0" }}>
+            <span className={`tag ${elapsed >= deadline * 0.8 ? "red" : "green"}`}>
+              ⏱ {mm}:{ss} / {minutes}:00
             </span>
             <span className="muted">已答 {answered}/{cards.length}</span>
             <button onClick={() => submit()} className="primary" disabled={answered === 0}>交卷</button>
           </div>
-          {elapsed >= deadline && <div className="error">时间到，自动交卷</div>}
+          {elapsed >= deadline && <div className="error" style={{ marginBottom: 10 }}>⏰ 时间到，已自动交卷</div>}
           {cards.map((c, i) => renderQuestion(c, i, false))}
         </div>
       )}
 
       {phase === "done" && result && (
         <div>
-          <div className="card" style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 40, fontWeight: 700 }}>{result.score}</div>
-            <div className="muted">得分</div>
-            <div className="muted">答对 {result.correct} / {result.total}</div>
-            <div className="row" style={{ justifyContent: "center", marginTop: 12 }}>
+          <div className="card" style={{ textAlign: "center", padding: "30px 20px" }}>
+            <div style={{
+              fontSize: 52, fontWeight: 800, lineHeight: 1.1,
+              background: "var(--grad-brand)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+            }}>
+              {result.score}
+            </div>
+            <div className="muted" style={{ fontSize: 14 }}>得分</div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              答对 {result.correct} / {result.total}（{result.total ? Math.round((result.correct / result.total) * 100) : 0}%）
+            </div>
+            <div className="row" style={{ justifyContent: "center", marginTop: 14 }}>
               <button onClick={() => setPhase("config")} className="primary">再来一套</button>
             </div>
           </div>

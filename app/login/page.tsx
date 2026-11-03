@@ -55,17 +55,17 @@ export default function LoginPage() {
 
   return (
     <div className="center-page">
-      <div className="card" style={{ width: 340 }}>
+      <div className="card login-card">
         <img src="/logo.png" className="login-logo" alt="刷题啦" />
-        <p className="muted" style={{ textAlign: "center" }}>
+        <p className="muted" style={{ textAlign: "center", marginTop: 8 }}>
           行测真题 · SM-2 间隔重复
         </p>
         {allowRegister && (
-          <div className="row" style={{ justifyContent: "center", marginBottom: 14 }}>
-            <button className={mode === "login" ? "primary" : ""} onClick={() => setMode("login")}>
+          <div className="row" style={{ justifyContent: "center", marginBottom: 14, gap: 6 }}>
+            <button className={mode === "login" ? "primary" : "ghost"} onClick={() => setMode("login")}>
               登录
             </button>
-            <button className={mode === "register" ? "primary" : ""} onClick={() => setMode("register")}>
+            <button className={mode === "register" ? "primary" : "ghost"} onClick={() => setMode("register")}>
               注册
             </button>
           </div>
@@ -78,7 +78,7 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          {err && <div className="error">{err}</div>}
+          {err && <div className="error" style={{ fontSize: 13 }}>{err}</div>}
           <button
             className="primary"
             disabled={busy}

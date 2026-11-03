@@ -109,13 +109,22 @@ export default function BrowsePage() {
           </Link>
         </div>
       ))}
-      <div className="row">
+      {rows.length === 0 && (
+        <div className="empty">
+          <div className="icon">🔍</div>
+          <div>没有符合条件的题目</div>
+          <div className="muted" style={{ marginTop: 4 }}>试试放宽筛选条件或更换关键词</div>
+        </div>
+      )}
+      <div className="row" style={{ justifyContent: "center", marginTop: 14 }}>
         <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-          上一页
+          ← 上一页
         </button>
-        <span className="muted">第 {page} 页</span>
+        <span className="muted">
+          第 {page} 页 · 共 {Math.ceil(total / 25) || 1} 页
+        </span>
         <button disabled={page * 25 >= total} onClick={() => setPage((p) => p + 1)}>
-          下一页
+          下一页 →
         </button>
       </div>
     </div>
