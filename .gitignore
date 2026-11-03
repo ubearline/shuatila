@@ -26,6 +26,9 @@ tsconfig.tsbuildinfo
 # 上游原始题库副本（sync:upstream 下载到 .cache/upstream，体积大，不入库）
 /.cache/
 
+# 设计草稿
+/.creative-design/
+
 # env / os
 .env*
 !.env.example
