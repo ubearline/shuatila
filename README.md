@@ -32,10 +32,10 @@ pnpm dev                # http://localhost:3000
 ```
 ERRRC/xingcezhenti（公开原始真题 · 未蒸馏）
    顶层 01-政治理论…06-资料分析 + 90-图片，一文件一卷、每题 `## 第 N 题`
-        │  蒸馏成 Obsidian Vault（一题一文件）
+        │  作者蒸馏成深度标注笔记
         ▼
-蒸馏后 Vault（如 kaogongzhentizhengliu-main）
-   10-真题/<模块>/<大类>/<题>.md + 15-材料/ + 90-图片/
+ERRRC/kaogongzhentizhengliu  ← 本项目的直接数据源（蒸馏后 Obsidian Vault）
+   10-真题 / 15-材料 / 20-考点 / 30-疑点复核 / 90-图片
         │  parse.py 解析 + img2webp.py 转码（sync:upstream）
         ▼
 ShuaTiLa 本仓库：db/kaogong.db.part-NN + data/images（WebP），全部入库
@@ -44,27 +44,28 @@ ShuaTiLa 本仓库：db/kaogong.db.part-NN + data/images（WebP），全部入�
 镜像（只基于本仓库，不依赖任何外部仓库）
 ```
 
-- **数据源 = 蒸馏后的 Obsidian Vault**（`10-真题` / `15-材料` / `90-图片`）。`parse.py` 只认这种结构：一题一个 md、front-matter 带 `qid`/`类型`。
-- **[ERRRC/xingcezhenti](https://github.com/ERRRC/xingcezhenti)**（515 卷 / 58,890 题 / 39,463 张图）是那批真题的公开原始出处，但它**未蒸馏**（顶层 `01-…`/`06-…`、一文件多题），现有 `parse.py` 解析不了，需要先蒸馏成 Vault；管线检测到这种结构会直接报错。
-- **GongkaoNaoku（考公脑库）只是实现逻辑上的参考项目**，不是数据上游 —— 同步管线不读它。
-- 上游副本缓存到 `.cache/upstream/`（已 gitignore）。
+- **上游 = [ERRRC/kaogongzhentizhengliu](https://github.com/ERRRC/kaogongzhentizhengliu)**（1019★，蒸馏后的 Obsidian Vault，约 215MB）。`parse.py` 只认这种结构：一题一个 md、front-matter 带 `qid`/`类型`。
+- **GongkaoNaoku（考公脑库）只是「实现逻辑上的参考项目」**：本管线做的事与它一致（解析 Vault → 题库、原图 → WebP、切分卷、入库），它默认的 `../kaogongzhentizhengliu-main` 其实就是上面这个仓库 main 分支 zip 解压出来的目录名。我们**参考它的做法，但数据直接取自 ERRRC 仓库**，不读 GongkaoNaoku 的任何产物。
+- **[ERRRC/xingcezhenti](https://github.com/ERRRC/xingcezhenti)**（515 卷 / 58,890 题）是公开原始出处，但**未蒸馏**（顶层 `01-…`/`06-…`、一文件多题），现有 `parse.py` 解析不了；管线检测到这种结构会直接报错。
+- 上游副本缓存到 `.cache/upstream/kaogongzhentizhengliu`（已 gitignore）。
 
 ## 上游同步管线（手动触发）
 
 镜像不依赖上游，上游更新不会自动进镜像，需要显式跑一次管线：
 
 ```bash
-pnpm sync:upstream --vault <vault路径> --commit              # 用本地 Vault 同步并提交
-pnpm sync:upstream --vault <vault路径> --pull --commit       # Vault 是 git 仓库时先更新
-pnpm sync:upstream --repo <git地址>                          # 无本地副本时浅克隆（或 KAOGONG_UPSTREAM_REPO）
-pnpm sync:upstream --zip <zip路径或URL>                      # 用仓库快照 zip
+pnpm sync:upstream --pull --commit                           # 更新上游副本 → 解析 → 转图 → 切分 → 校验 → 提交
+pnpm sync:upstream                                           # 无本地副本时浅克隆默认上游，再同步（不提交）
+pnpm sync:upstream --vault <vault路径> --commit              # 用本地已有的 Vault，不联网
+pnpm sync:upstream --zip default                             # 用仓库快照 zip（git 不通时；也可给本地路径）
 pnpm sync:upstream --fresh                                   # 题库全量重建（清空旧题重解析）
 pnpm sync:upstream --no-images / --no-db                     # 只更新题库 / 只转图
+pnpm sync:upstream --no-fetch                                # 禁止联网，缺副本直接报错
 pnpm sync:upstream --dry-run                                 # 只看计划，不写文件
 ```
 
-Vault 定位顺序：`--vault` → 环境变量 `KAOGONG_VAULT` → 项目旁 `../kaogongzhentizhengliu-main` → `.cache/upstream/` 下已有副本；
-都没有时报错并提示三种提供方式（`--vault` / `--repo` / `--zip`），不会擅自联网。
+Vault 定位顺序：`--vault` → 环境变量 `KAOGONG_VAULT` → 项目旁 `../kaogongzhentizhengliu-main` → `.cache/upstream/` 已有副本
+→ 都没有则浅克隆 `https://github.com/ERRRC/kaogongzhentizhengliu.git`（`--repo` / `KAOGONG_UPSTREAM_REPO` 可换地址）。
 
 管线内部依次执行：
 

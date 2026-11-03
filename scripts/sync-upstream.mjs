@@ -3,10 +3,11 @@
  * 上游同步管线（手动触发）—— 拿到「原始题库 Vault」后解析真题、转码图片，重建本项目资产并提交。
  *
  * 数据血缘：
- *   ERRRC/xingcezhenti（公开原始真题，未蒸馏，顶层 01-…/06-… 模块目录 + 90-图片）
- *        │  蒸馏成 Obsidian Vault（一题一文件）
+ *   ERRRC/xingcezhenti（公开原始真题，未蒸馏：顶层 01-…/06-…，一文件多题）
+ *        │  作者蒸馏成深度标注笔记
  *        ▼
- *   蒸馏后 Vault：10-真题/<模块>/<大类>/<题>.md + 15-材料/ + 90-图片/
+ *   ERRRC/kaogongzhentizhengliu（蒸馏后 Obsidian Vault，本项目的直接数据源）
+ *        顶层：10-真题 / 15-材料 / 20-考点 / 30-疑点复核 / 90-图片
  *        │  parse.py 解析 + img2webp.py 转码（本脚本）
  *        ▼
  *   本项目 ShuaTiLa：db/kaogong.db.part-NN + data/images（WebP），全部入库
@@ -14,13 +15,14 @@
  *        ▼
  *   镜像（只基于本仓库，不依赖任何外部仓库）
  *
- *   ※ GongkaoNaoku 只是实现逻辑上的参考项目，不是数据上游，本管线不读它。
- *   ※ parse.py 只认「蒸馏后 Vault」结构（10-真题，一题一文件）。
- *     直接给 xingcezhenti 原始快照（01-…/06-…，一文件多题）它解析不了，会明确报错。
+ *   ※ GongkaoNaoku 只是「实现逻辑上的参考项目」：本管线做的动作与它一致
+ *     （解析 Vault → 题库、转图 → WebP、切分卷、入库），但数据直接取自 ERRRC 的 Vault 仓库，
+ *     不读 GongkaoNaoku 的任何产物。
+ *   ※ parse.py 只认蒸馏后 Vault（10-真题，一题一文件）；给它 xingcezhenti 原始快照会明确报错。
  *
  * 流程：
  *   1) 定位 Vault   --vault / KAOGONG_VAULT / 项目旁 ../kaogongzhentizhengliu-main /
- *                   .cache/upstream 下已有副本；也可用 --repo 克隆、--zip 用快照 zip
+ *                   .cache/upstream 下已有副本；都没有则浅克隆默认上游（--no-fetch 可禁用联网）
  *   2) 解析真题   scripts/parse.py        markdown → data/kaogong.db（增量；--fresh 全量重建）
  *   3) 图片转码   scripts/img2webp.py     <vault>/90-图片 → data/images（WebP q88，已存在跳过）
  *   4) 切分卷     scripts/split-db.mjs    data/kaogong.db → db/kaogong.db.part-NN
@@ -28,12 +30,13 @@
  *   6) 入库       git add + commit（--commit）
  *
  * 用法：
- *   pnpm sync:upstream --vault D:/vault/kaogongzhentizhengliu-main --commit
- *   pnpm sync:upstream --vault <vault> --pull --commit   # Vault 是 git 仓库时先更新再同步
- *   pnpm sync:upstream --repo <git地址>                  # 没有本地副本时克隆（或 KAOGONG_UPSTREAM_REPO）
- *   pnpm sync:upstream --zip <zip路径或URL>              # 用仓库快照 zip
+ *   pnpm sync:upstream                                   # 无本地副本时浅克隆默认上游，然后解析/转图/切分/校验
+ *   pnpm sync:upstream --pull --commit                   # 先 git pull 上游副本，再同步并提交
+ *   pnpm sync:upstream --vault <vault路径> --commit      # 用本地已有的 Vault（不联网）
+ *   pnpm sync:upstream --zip <zip路径或URL>              # 用仓库快照 zip（git 不通时走这条路）
  *   pnpm sync:upstream --fresh                           # 题库全量重建（清空旧题重解析）
  *   pnpm sync:upstream --no-images / --no-db             # 只更新题库 / 只转图
+ *   pnpm sync:upstream --no-fetch                        # 禁止联网，缺副本直接报错
  *   pnpm sync:upstream --dry-run                         # 只看计划，不写文件
  */
 import fs from "node:fs";
@@ -55,8 +58,12 @@ const doDb = !has("--no-db");
 const fresh = has("--fresh");
 const doCommit = has("--commit");
 const dryRun = has("--dry-run");
+const noFetch = has("--no-fetch");
 const zipArg = opt("--zip", "");
-const repo = opt("--repo", process.env.KAOGONG_UPSTREAM_REPO || "");
+// 上游 = 蒸馏后的 Obsidian Vault 仓库（ERRRC/kaogongzhentizhengliu），不是 GongkaoNaoku
+const DEFAULT_REPO = "https://github.com/ERRRC/kaogongzhentizhengliu.git";
+const DEFAULT_ZIP = "https://codeload.github.com/ERRRC/kaogongzhentizhengliu/zip/refs/heads/main";
+const repo = opt("--repo", process.env.KAOGONG_UPSTREAM_REPO || DEFAULT_REPO);
 const python = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
 
 const CACHE_DIR = path.join(root, ".cache", "upstream");
@@ -135,7 +142,7 @@ if (vault) vault = path.resolve(vault);
 else vault = discoverVault() || "";
 
 if (zipArg) {
-  let zipPath = zipArg;
+  let zipPath = zipArg === "default" ? DEFAULT_ZIP : zipArg;
   if (/^https?:\/\//i.test(zipArg)) {
     zipPath = path.join(CACHE_DIR, "upstream.zip");
     if (!fs.existsSync(zipPath) || doPull) {
@@ -162,27 +169,29 @@ if (zipArg) {
   } else {
     console.log("[SKIP] 该副本不是 git 仓库，跳过更新");
   }
-} else if (repo) {
+} else if (noFetch) {
+  fail(
+    "找不到 Vault，且指定了 --no-fetch（禁止联网）。可选：\n" +
+      `  1) --vault <路径>   本地 Vault（需含 10-真题 / 15-材料 / 90-图片），默认也会找 ${SIBLING_VAULT}\n` +
+      "  2) 去掉 --no-fetch，让它浅克隆上游：" + repo + "\n" +
+      `  3) --zip <zip或URL>  仓库快照 zip（默认可用 ${DEFAULT_ZIP}）`
+  );
+} else {
   const dest = path.join(CACHE_DIR, repo.replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.git$/, ""));
   if (dryRun) {
     console.log(`[DRY] 将 git clone --depth 1 ${repo} → ${dest}`);
     vault = dest;
   } else {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
-    console.log(`[克隆] ${repo} → ${dest}（浅克隆，含原图，可能要几分钟）`);
+    console.log(`[克隆] ${repo} → ${dest}（浅克隆，含原图，首次约 200MB+，可能要几分钟）`);
     if (!git(["clone", "--depth", "1", repo, dest], root)) {
-      fail(`浅克隆失败：${repo}。可换地址 --repo <地址>，或手动下载 zip 后用 --zip <路径或URL>。`);
+      fail(
+        `浅克隆失败：${repo}\n` +
+          `  可换地址 --repo <地址> / KAOGONG_UPSTREAM_REPO，或改用快照 zip：--zip ${DEFAULT_ZIP}`
+      );
     }
     vault = dest;
   }
-} else {
-  fail(
-    "找不到原始题库 Vault。请用以下任一方式提供：\n" +
-      `  1) --vault <路径>     本地 Vault（需含 10-真题 / 15-材料 / 90-图片），默认也会找 ${SIBLING_VAULT}\n` +
-      "  2) --repo <git地址>   从 git 仓库浅克隆（或设环境变量 KAOGONG_UPSTREAM_REPO）\n" +
-      "  3) --zip <zip或URL>   用仓库快照 zip（可给本地路径或下载链接）\n" +
-      "  注意：需要的是「蒸馏后」的 Vault（一题一文件），不是 xingcezhenti 原始快照（一文件多题）。"
-  );
 }
 
 if (!fs.existsSync(vault)) {
