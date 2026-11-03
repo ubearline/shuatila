@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 考公真题库 -> SQLite 导入器
-读取 Obsidian vault 的 10-真题 / 15-材料 / 20-考点，把每道真题的结构化标注解析进数据库。
+读取 Obsidian vault 的 10-真题 / 15-材料，把每道真题的结构化标注解析进数据库。
 仅用标准库。运行:  python parse.py
 """
 import os, re, sys, json, sqlite3, datetime, time
@@ -24,7 +24,6 @@ FRESH = (os.environ.get("KAOGONG_FRESH") == "1") or ("--fresh" in sys.argv)
 
 Q_DIR = os.path.join(VAULT_ROOT, "10-真题")
 M_DIR = os.path.join(VAULT_ROOT, "15-材料")
-K_DIR = os.path.join(VAULT_ROOT, "20-考点")
 
 # 图片路径归一化：把 (../)+90-图片/ -> /90-图片/
 IMG_RE = re.compile(r"(?:\.\./)+90-图片/")
@@ -168,7 +167,7 @@ def extract_imgs(text):
 def build_schema(conn):
     if FRESH:
         cur = conn.cursor()
-        for t in ("questions", "materials", "kaodian", "srs", "reviews"):
+        for t in ("questions", "materials", "srs", "reviews"):
             cur.execute("DROP TABLE IF EXISTS " + t)
         conn.commit()
     conn.executescript("""
@@ -184,133 +183,11 @@ def build_schema(conn):
     );
     CREATE TABLE IF NOT EXISTS materials(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        mid TEXT UNIQUE, title TEXT, theme TEXT, qcount INT, body TEXT, path TEXT
+        mid TEXT UNIQUE, title TEXT, body TEXT, path TEXT
     );
-    -- 考点（20-考点）：蒸馏后的母题抽象/解题立场，聚合多道真题
-    CREATE TABLE IF NOT EXISTS kaodian(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        module TEXT, category TEXT, name TEXT,
-        qcount INT, regions INT, years TEXT,
-        stances TEXT, qids TEXT, doubt TEXT,
-        path TEXT UNIQUE
-    );
-    CREATE INDEX IF NOT EXISTS ix_kd_name ON kaodian(module, name);
     -- 用户表（srs/reviews 等）已拆分到 users.db，由 server.py 启动时自建，本脚本只产纯题库
     """)
     conn.commit()
-
-def clean_md(seg):
-    if not seg:
-        return ""
-    seg = norm_html(seg)
-    seg = re.sub(r"\[\[([^\]|]+)\|([^\]]+)\]\]", r"\2", seg)
-    seg = re.sub(r"\[\[([^\]]+)\]\]", r"\1", seg)
-    return seg.strip()
-
-
-def parse_materials(cur):
-    """15-材料/资料分析/*.md -> materials 表"""
-    if not os.path.isdir(M_DIR):
-        print("[INFO] 无 15-材料 目录，跳过材料导入")
-        return 0
-    files = []
-    for root, _, names in os.walk(M_DIR):
-        for n in names:
-            if n.endswith(".md"):
-                files.append(os.path.join(root, n))
-    rows = []
-    for fp in sorted(files):
-        try:
-            raw = open(fp, "r", encoding="utf-8", errors="replace").read()
-        except Exception:
-            continue
-        fm, body = parse_frontmatter(raw)
-        if fm.get("类型") != "材料" and "类型" in fm:
-            continue
-        mid = str(fm.get("mid", "") or os.path.basename(fp).split(" ")[0])
-        rel = os.path.relpath(fp, VAULT_ROOT).replace("\\", "/")
-        hm = re.search(r"^#\s+(.+)$", body, re.M)
-        title = hm.group(1).strip() if hm else os.path.basename(fp)[:-3]
-        theme = str(fm.get("材料主题", "") or "")
-        qc = str(fm.get("小题数", "") or "0")
-        try:
-            qcount = int(re.sub(r"\D", "", qc) or 0)
-        except ValueError:
-            qcount = 0
-        rows.append((mid, title, theme, qcount, norm_html(clean_md(body)), rel))
-    cur.executemany("""INSERT OR REPLACE INTO materials(mid,title,theme,qcount,body,path)
-        VALUES (?,?,?,?,?,?)""", rows)
-    return len(rows)
-
-
-def parse_kaodian(cur):
-    """20-考点/<模块>/<大类>/<考点>.md -> kaodian 表；反链匹配 questions.qid"""
-    if not os.path.isdir(K_DIR):
-        print("[INFO] 无 20-考点 目录，跳过考点导入")
-        return 0
-    files = []
-    for root, _, names in os.walk(K_DIR):
-        for n in names:
-            if n.endswith(".md"):
-                files.append(os.path.join(root, n))
-    rows = []
-    for fp in sorted(files):
-        try:
-            raw = open(fp, "r", encoding="utf-8", errors="replace").read()
-        except Exception:
-            continue
-        fm, body = parse_frontmatter(raw)
-        if fm.get("类型") not in ("考点", "总览"):
-            continue
-        rel = os.path.relpath(fp, VAULT_ROOT).replace("\\", "/")
-        parts = rel.split("/")
-        # 20-考点/<模块>/<大类>/<file>；模块根的 00-总览 无大类
-        module = parts[1] if len(parts) > 2 else ""
-        category = parts[2] if len(parts) > 3 else ""
-        if os.path.basename(fp) == "00-总览.md":
-            category = ""
-        name = str(fm.get("考点", "") or ("" if not category else os.path.basename(fp)[:-3]))
-        if not name:
-            continue
-        def _int(k):
-            v = re.sub(r"\D", "", str(fm.get(k, "") or ""))
-            return int(v) if v else 0
-        qcount, regions = _int("题数"), _int("地区数")
-        # "> N 题 · M 个地区 · 2016–2026年" 里的年份跨度
-        ym = re.search(r">\s*\d+\s*题[^·]*·[^·]*·\s*([0-9]{4}[–—-][0-9]{4}年?)", body)
-        years = ym.group(1).rstrip("年") if ym else ""
-        # 核心立场（母题抽象）条目
-        stances = []
-        seg = extract_section(body, "核心立场（母题抽象）", "##") or extract_section(body, "核心立场", "##")
-        if seg:
-            for line in seg.splitlines():
-                line = line.strip()
-                if line.startswith("-"):
-                    stances.append(re.sub(r"^-\s*", "", line).strip())
-        # 真题反链 -> qid 列表
-        qids = []
-        qseg = extract_section(body, "真题（跨卷聚合）", "##")
-        if qseg:
-            for path, _disp in re.findall(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]", qseg):
-                if not path.strip().startswith("10-真题/"):
-                    continue
-                m = re.search(r"(\d+)", os.path.basename(path))
-                if m:
-                    qids.append(m.group(1))
-        # 疑点待复核：勾选框及文字
-        doubt = ""
-        dseg = extract_section(body, "疑点待复核", "##")
-        if dseg:
-            items = [re.sub(r"^-\s*", "", l).strip() for l in dseg.splitlines() if l.strip().startswith("- [")]
-            doubt = clean_md("\n".join(items))[:2000]
-        rows.append((module, category, name, qcount, regions, years,
-                     json.dumps(stances, ensure_ascii=False),
-                     ",".join(qids), doubt, rel))
-    cur.executemany("""INSERT OR REPLACE INTO kaodian
-        (module,category,name,qcount,regions,years,stances,qids,doubt,path)
-        VALUES (?,?,?,?,?,?,?,?,?,?)""", rows)
-    return len(rows)
-
 
 def main():
     if not os.path.isdir(Q_DIR):
@@ -424,10 +301,6 @@ def main():
         CREATE INDEX IF NOT EXISTS ix_mod ON questions(module,category);
         CREATE INDEX IF NOT EXISTS ix_kd ON questions(kadian);
     """)
-    n_mat = parse_materials(cur)
-    n_kd = parse_kaodian(cur)
-    conn.commit()
-    print(f"[OK] 材料 {n_mat} 篇，考点 {n_kd} 个")
     # 兼容存量旧库：清掉拆分前混入的用户表，产出纯题库
     cur.executescript("""
         DROP TABLE IF EXISTS srs;
