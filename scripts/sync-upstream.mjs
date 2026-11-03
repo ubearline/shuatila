@@ -1,20 +1,26 @@
 #!/usr/bin/env node
 /**
- * 上游同步管线（手动触发）—— 从「原始题库 Vault」拉取 markdown 真题与原图，重建本项目资产并提交。
+ * 上游同步管线（手动触发）—— 拿到「原始题库 Vault」后解析真题、转码图片，重建本项目资产并提交。
  *
- * 数据源关系：
- *   ERRRC/xingcezhenti（原始 Obsidian 题库：10-真题 / 15-材料 / 90-图片 原图）
- *        │  解析 + 转码
+ * 数据血缘：
+ *   ERRRC/xingcezhenti（公开原始真题，未蒸馏，顶层 01-…/06-… 模块目录 + 90-图片）
+ *        │  蒸馏成 Obsidian Vault（一题一文件）
  *        ▼
- *   本项目 ShuaTiLa：data/kaogong.db（由 db 分卷拼出）+ data/images（WebP）
- *        │  构建期
+ *   蒸馏后 Vault：10-真题/<模块>/<大类>/<题>.md + 15-材料/ + 90-图片/
+ *        │  parse.py 解析 + img2webp.py 转码（本脚本）
  *        ▼
- *   Docker 镜像（只基于本仓库，不依赖任何外部仓库）
+ *   本项目 ShuaTiLa：db/kaogong.db.part-NN + data/images（WebP），全部入库
+ *        │  Docker 构建期
+ *        ▼
+ *   镜像（只基于本仓库，不依赖任何外部仓库）
  *
- *   ※ GongkaoNaoku 是实现逻辑上的参考项目，不是本项目的数据上游，本管线不读它。
+ *   ※ GongkaoNaoku 只是实现逻辑上的参考项目，不是数据上游，本管线不读它。
+ *   ※ parse.py 只认「蒸馏后 Vault」结构（10-真题，一题一文件）。
+ *     直接给 xingcezhenti 原始快照（01-…/06-…，一文件多题）它解析不了，会明确报错。
  *
  * 流程：
- *   1) 获取上游   git clone/pull xingcezhenti 到 .cache/upstream（或用 --vault 指定已有副本 / --zip 指定快照）
+ *   1) 定位 Vault   --vault / KAOGONG_VAULT / 项目旁 ../kaogongzhentizhengliu-main /
+ *                   .cache/upstream 下已有副本；也可用 --repo 克隆、--zip 用快照 zip
  *   2) 解析真题   scripts/parse.py        markdown → data/kaogong.db（增量；--fresh 全量重建）
  *   3) 图片转码   scripts/img2webp.py     <vault>/90-图片 → data/images（WebP q88，已存在跳过）
  *   4) 切分卷     scripts/split-db.mjs    data/kaogong.db → db/kaogong.db.part-NN
@@ -22,15 +28,13 @@
  *   6) 入库       git add + commit（--commit）
  *
  * 用法：
- *   pnpm sync:upstream                        # 用已有/缓存的上游副本同步（不更新上游、不提交）
- *   pnpm sync:upstream --pull --commit        # 更新上游 → 解析 → 转图 → 切分 → 校验 → 提交
- *   pnpm sync:upstream --fresh                # 题库全量重建（清空旧题重解析）
- *   pnpm sync:upstream --no-images            # 只更新题库，不转图
- *   pnpm sync:upstream --no-db                # 只转图，不动题库
- *   pnpm sync:upstream --vault <vault路径>    # 用本地已有的原始题库副本
- *   pnpm sync:upstream --repo <git地址>       # 换上游仓库地址（或环境变量 KAOGONG_UPSTREAM_REPO）
- *   pnpm sync:upstream --zip <zip路径或URL>   # 用仓库快照 zip（git 不通时用）
- *   pnpm sync:upstream --dry-run              # 只看计划，不写文件
+ *   pnpm sync:upstream --vault D:/vault/kaogongzhentizhengliu-main --commit
+ *   pnpm sync:upstream --vault <vault> --pull --commit   # Vault 是 git 仓库时先更新再同步
+ *   pnpm sync:upstream --repo <git地址>                  # 没有本地副本时克隆（或 KAOGONG_UPSTREAM_REPO）
+ *   pnpm sync:upstream --zip <zip路径或URL>              # 用仓库快照 zip
+ *   pnpm sync:upstream --fresh                           # 题库全量重建（清空旧题重解析）
+ *   pnpm sync:upstream --no-images / --no-db             # 只更新题库 / 只转图
+ *   pnpm sync:upstream --dry-run                         # 只看计划，不写文件
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -52,11 +56,11 @@ const fresh = has("--fresh");
 const doCommit = has("--commit");
 const dryRun = has("--dry-run");
 const zipArg = opt("--zip", "");
-const repo = opt("--repo", process.env.KAOGONG_UPSTREAM_REPO || "https://github.com/ERRRC/xingcezhenti.git");
+const repo = opt("--repo", process.env.KAOGONG_UPSTREAM_REPO || "");
 const python = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
 
 const CACHE_DIR = path.join(root, ".cache", "upstream");
-const DEFAULT_VAULT = path.join(CACHE_DIR, "xingcezhenti");
+const SIBLING_VAULT = path.join(path.dirname(root), "kaogongzhentizhengliu-main");
 
 const step = (t) => console.log(`\n=== ${t} ===`);
 const fail = (msg) => {
@@ -76,12 +80,27 @@ function git(args, cwd) {
 }
 
 function findVaultRoot(dir) {
-  // zip 解压后可能多一层 xingcezhenti-main/
+  // zip 解压后可能多一层顶层目录（xingcezhenti-main/、kaogongzhentizhengliu-main/ 等）
   if (fs.existsSync(path.join(dir, "10-真题")) || fs.existsSync(path.join(dir, "90-图片"))) return dir;
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     if (!e.isDirectory()) continue;
     const p = path.join(dir, e.name);
     if (fs.existsSync(path.join(p, "10-真题")) || fs.existsSync(path.join(p, "90-图片"))) return p;
+  }
+  return null;
+}
+
+// 自动定位「蒸馏后 Vault」：项目旁的 kaogongzhentizhengliu-main，或 .cache/upstream 下的任一副本
+function discoverVault() {
+  const cands = [SIBLING_VAULT];
+  if (fs.existsSync(CACHE_DIR)) {
+    for (const e of fs.readdirSync(CACHE_DIR, { withFileTypes: true })) {
+      if (e.isDirectory()) cands.push(path.join(CACHE_DIR, e.name));
+    }
+  }
+  for (const c of cands) {
+    const found = fs.existsSync(c) ? findVaultRoot(c) : null;
+    if (found) return found;
   }
   return null;
 }
@@ -109,16 +128,16 @@ if (doImages && spawnSync(python, ["-c", "import PIL"], { stdio: "ignore" }).sta
   fail(`图片转码需要 Pillow：${python} -m pip install Pillow`);
 }
 
-// ---------- 1. 获取上游 ----------
-step("1/6 获取上游原始题库（xingcezhenti）");
+// ---------- 1. 定位/获取 Vault ----------
+step("1/6 定位原始题库 Vault（10-真题 / 15-材料 / 90-图片）");
 let vault = opt("--vault", process.env.KAOGONG_VAULT || "");
 if (vault) vault = path.resolve(vault);
-else if (fs.existsSync(DEFAULT_VAULT)) vault = DEFAULT_VAULT;
+else vault = discoverVault() || "";
 
 if (zipArg) {
   let zipPath = zipArg;
   if (/^https?:\/\//i.test(zipArg)) {
-    zipPath = path.join(CACHE_DIR, "xingcezhenti.zip");
+    zipPath = path.join(CACHE_DIR, "upstream.zip");
     if (!fs.existsSync(zipPath) || doPull) {
       if (dryRun) {
         console.log(`[DRY] 下载 ${zipArg}`);
@@ -132,8 +151,8 @@ if (zipArg) {
     }
   }
   if (!fs.existsSync(zipPath)) fail(`zip 不存在：${zipPath}`);
-  const found = dryRun ? DEFAULT_VAULT : unzip(zipPath, path.join(CACHE_DIR, "snapshot"));
-  vault = found || vault || DEFAULT_VAULT;
+  const found = dryRun ? zipPath : unzip(zipPath, path.join(CACHE_DIR, "snapshot"));
+  vault = found || vault;
 } else if (vault && fs.existsSync(vault)) {
   if (!doPull) {
     console.log("[SKIP] 未指定 --pull，使用副本当前内容");
@@ -143,36 +162,46 @@ if (zipArg) {
   } else {
     console.log("[SKIP] 该副本不是 git 仓库，跳过更新");
   }
-} else {
+} else if (repo) {
+  const dest = path.join(CACHE_DIR, repo.replace(/[\\/]+$/, "").split(/[\\/]/).pop().replace(/\.git$/, ""));
   if (dryRun) {
-    console.log(`[DRY] 将 git clone --depth 1 ${repo} → ${DEFAULT_VAULT}`);
-    vault = DEFAULT_VAULT;
+    console.log(`[DRY] 将 git clone --depth 1 ${repo} → ${dest}`);
+    vault = dest;
   } else {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
-    console.log(`[克隆] ${repo} → ${DEFAULT_VAULT}（浅克隆，含原图，可能要几分钟）`);
-    if (!git(["clone", "--depth", "1", repo, DEFAULT_VAULT], root)) {
-      fail(
-        `浅克隆失败。可换地址：--repo <地址> 或 KAOGONG_UPSTREAM_REPO=<地址>；\n` +
-          `  或手动下载仓库 zip 后用 --zip <路径或URL>。`
-      );
+    console.log(`[克隆] ${repo} → ${dest}（浅克隆，含原图，可能要几分钟）`);
+    if (!git(["clone", "--depth", "1", repo, dest], root)) {
+      fail(`浅克隆失败：${repo}。可换地址 --repo <地址>，或手动下载 zip 后用 --zip <路径或URL>。`);
     }
-    vault = DEFAULT_VAULT;
+    vault = dest;
   }
+} else {
+  fail(
+    "找不到原始题库 Vault。请用以下任一方式提供：\n" +
+      `  1) --vault <路径>     本地 Vault（需含 10-真题 / 15-材料 / 90-图片），默认也会找 ${SIBLING_VAULT}\n` +
+      "  2) --repo <git地址>   从 git 仓库浅克隆（或设环境变量 KAOGONG_UPSTREAM_REPO）\n" +
+      "  3) --zip <zip或URL>   用仓库快照 zip（可给本地路径或下载链接）\n" +
+      "  注意：需要的是「蒸馏后」的 Vault（一题一文件），不是 xingcezhenti 原始快照（一文件多题）。"
+  );
 }
 
 if (!fs.existsSync(vault)) {
-  if (dryRun) console.log(`[DRY] 上游副本尚未下载：${vault}`);
-  else fail(`上游副本不存在：${vault}（用 --vault 指定，或不指定让它自动克隆）`);
+  if (dryRun) console.log(`[DRY] Vault 尚未下载：${vault}`);
+  else fail(`Vault 不存在：${vault}`);
 }
 const vaultRoot = (fs.existsSync(vault) ? findVaultRoot(vault) : null) || vault;
-console.log(`[上游] ${vaultRoot}`);
+console.log(`[Vault] ${vaultRoot}`);
 console.log(`[项目] ${root}${dryRun ? "（--dry-run，不写文件）" : ""}`);
 if (!dryRun) {
   if (doDb && !fs.existsSync(path.join(vaultRoot, "10-真题"))) {
-    fail(`上游副本里没有 10-真题/：${vaultRoot}（原始题库 Vault 应含 10-真题 / 15-材料 / 90-图片）`);
+    fail(
+      `Vault 里没有 10-真题/：${vaultRoot}\n` +
+        "  parse.py 需要「蒸馏后」的 Vault：10-真题/<模块>/<大类>/<题>.md + 15-材料 + 90-图片。\n" +
+        "  若这是 xingcezhenti 原始快照（顶层 01-…/06-…、一文件多题），现有解析器无法直接解析。"
+    );
   }
   if (doImages && !fs.existsSync(path.join(vaultRoot, "90-图片"))) {
-    fail(`上游副本里没有 90-图片/：${vaultRoot}`);
+    fail(`Vault 里没有 90-图片/：${vaultRoot}`);
   }
 }
 

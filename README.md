@@ -30,43 +30,47 @@ pnpm dev                # http://localhost:3000
 ## 数据来源
 
 ```
-ERRRC/xingcezhenti（原始 Obsidian 题库：10-真题 / 15-材料 / 90-图片 原图）
-   │  parse.py 解析 + img2webp.py 转码
-   ▼
-ShuaTiLa 本仓库：data/kaogong.db（由 db 分卷拼出）+ data/images（WebP）
-   │  Docker 构建期
-   ▼
+ERRRC/xingcezhenti（公开原始真题 · 未蒸馏）
+   顶层 01-政治理论…06-资料分析 + 90-图片，一文件一卷、每题 `## 第 N 题`
+        │  蒸馏成 Obsidian Vault（一题一文件）
+        ▼
+蒸馏后 Vault（如 kaogongzhentizhengliu-main）
+   10-真题/<模块>/<大类>/<题>.md + 15-材料/ + 90-图片/
+        │  parse.py 解析 + img2webp.py 转码（sync:upstream）
+        ▼
+ShuaTiLa 本仓库：db/kaogong.db.part-NN + data/images（WebP），全部入库
+        │  Docker 构建期
+        ▼
 镜像（只基于本仓库，不依赖任何外部仓库）
 ```
 
-- **上游 = [ERRRC/xingcezhenti](https://github.com/ERRRC/xingcezhenti)**（2016–2026 行测真题，515 卷 / 58,890 题行 / 3.9 万张图），这是本项目唯一的数据上游。
+- **数据源 = 蒸馏后的 Obsidian Vault**（`10-真题` / `15-材料` / `90-图片`）。`parse.py` 只认这种结构：一题一个 md、front-matter 带 `qid`/`类型`。
+- **[ERRRC/xingcezhenti](https://github.com/ERRRC/xingcezhenti)**（515 卷 / 58,890 题 / 39,463 张图）是那批真题的公开原始出处，但它**未蒸馏**（顶层 `01-…`/`06-…`、一文件多题），现有 `parse.py` 解析不了，需要先蒸馏成 Vault；管线检测到这种结构会直接报错。
 - **GongkaoNaoku（考公脑库）只是实现逻辑上的参考项目**，不是数据上游 —— 同步管线不读它。
-- 上游副本默认缓存在 `.cache/upstream/xingcezhenti`（已 gitignore，不入仓库）。
+- 上游副本缓存到 `.cache/upstream/`（已 gitignore）。
 
 ## 上游同步管线（手动触发）
 
 镜像不依赖上游，上游更新不会自动进镜像，需要显式跑一次管线：
 
 ```bash
-pnpm sync:upstream --pull --commit     # 更新上游 → 解析 → 转图 → 切分 → 校验 → 提交
-pnpm sync:upstream                     # 用本地已有的上游副本同步（不更新上游、不提交）
-pnpm sync:upstream --fresh             # 题库全量重建（清空旧题重解析）
-pnpm sync:upstream --no-images         # 只更新题库，不转图
-pnpm sync:upstream --no-db             # 只转图，不动题库
-pnpm sync:upstream --vault <vault路径> # 用本地已有的原始题库副本（含 10-真题 / 90-图片）
-pnpm sync:upstream --repo <git地址>    # 换上游仓库地址（或环境变量 KAOGONG_UPSTREAM_REPO）
-pnpm sync:upstream --zip <zip或URL>    # 用仓库快照 zip（git 不通时走这条路）
-pnpm sync:upstream --dry-run           # 只看计划，不写文件
+pnpm sync:upstream --vault <vault路径> --commit              # 用本地 Vault 同步并提交
+pnpm sync:upstream --vault <vault路径> --pull --commit       # Vault 是 git 仓库时先更新
+pnpm sync:upstream --repo <git地址>                          # 无本地副本时浅克隆（或 KAOGONG_UPSTREAM_REPO）
+pnpm sync:upstream --zip <zip路径或URL>                      # 用仓库快照 zip
+pnpm sync:upstream --fresh                                   # 题库全量重建（清空旧题重解析）
+pnpm sync:upstream --no-images / --no-db                     # 只更新题库 / 只转图
+pnpm sync:upstream --dry-run                                 # 只看计划，不写文件
 ```
 
-上游副本定位顺序：`--vault` → 环境变量 `KAOGONG_VAULT` → `.cache/upstream/xingcezhenti`；
-都没有且没给 `--vault` 时，自动浅克隆上游（含原图，首次约几百 MB）。
+Vault 定位顺序：`--vault` → 环境变量 `KAOGONG_VAULT` → 项目旁 `../kaogongzhentizhengliu-main` → `.cache/upstream/` 下已有副本；
+都没有时报错并提示三种提供方式（`--vault` / `--repo` / `--zip`），不会擅自联网。
 
 管线内部依次执行：
 
 | 步骤 | 动作 | 产物 |
 |---|---|---|
-| 1 获取上游 | `git clone --depth 1` / `git pull --ff-only` / 解压 zip | `.cache/upstream/` 里的原始 Vault |
+| 1 定位 Vault | 本地路径 / `git pull --ff-only` / `git clone --depth 1` / 解压 zip | Vault（含 10-真题 + 90-图片） |
 | 2 解析真题 | `scripts/parse.py`（`KAOGONG_VAULT=<vault>`） | `data/kaogong.db`（增量，`--fresh` 全量） |
 | 3 图片转码 | `scripts/img2webp.py`（`90-图片` 原图 → WebP q88） | `data/images/`（已存在则跳过） |
 | 4 切分卷 | `scripts/split-db.mjs` | `db/kaogong.db.part-NN`（30 MiB/卷，先清旧卷） |
