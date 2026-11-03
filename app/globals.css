@@ -108,7 +108,3 @@ th { color: #8a8f98; font-weight: 500; }
 .stem h3 { font-size: 15px; margin: 6px 0; }
 
 .focus { max-width: 680px; margin: 0 auto; }
-
-.stances { margin: 8px 0 0; padding-left: 18px; }
-.stances li { margin: 6px 0; line-height: 1.6; font-size: 13.5px; color: var(--fg, inherit); }
-button.link { background: none; border: none; padding: 0; color: #6ea8fe; cursor: pointer; font: inherit; text-align: left; }

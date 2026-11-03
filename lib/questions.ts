@@ -69,16 +69,6 @@ export type Card = {
   doubt_status?: string;
   srs_wrong?: number;
   verified?: unknown;
-  // 蒸馏版考库新增：所属考点的母题抽象/核心立场（来自 kaodian 表）
-  kadian_meta?: {
-    name: string;
-    module: string;
-    category: string;
-    qcount: number;
-    regions: number;
-    years: string;
-    stances: string[];
-  } | null;
 };
 
 // ---------- 答案泄露打码 ----------
@@ -157,51 +147,6 @@ function parseOptions(json: string): Option[] {
   }
 }
 
-// ---------- 考点元信息（kaodian 表，蒸馏 Vault 的 20-考点） ----------
-export type KadianMeta = {
-  name: string;
-  module: string;
-  category: string;
-  qcount: number;
-  regions: number;
-  years: string;
-  stances: string[];
-};
-
-export function getKadianMetaByQid(qid: string): KadianMeta | null {
-  if (!qid) return null;
-  const r = qdb()
-    .prepare(
-      // kaodian.qids 为真题反链聚合（与 questions.qid 100% 对应）
-      "SELECT module,category,name,qcount,regions,years,stances FROM kaodian WHERE (','||qids||',') LIKE ('%,'||?||',%') ORDER BY qcount DESC LIMIT 1"
-    )
-    .get(qid) as
-    | { module: string; category: string; name: string; qcount: number; regions: number; years: string; stances: string }
-    | undefined;
-  if (!r) return null;
-  return rowToMeta(r);
-}
-
-function rowToMeta(r: {
-  module: string; category: string; name: string; qcount: number; regions: number; years: string; stances: string;
-}): KadianMeta {
-  let stances: string[] = [];
-  try {
-    stances = JSON.parse(r.stances || "[]");
-  } catch {
-    /* ignore */
-  }
-  return {
-    name: r.name,
-    module: r.module,
-    category: r.category,
-    qcount: r.qcount,
-    regions: r.regions,
-    years: r.years,
-    stances,
-  };
-}
-
 export function cleanCard(row: QuestionRow, reveal: boolean, uid?: string): Card {
   const d: Card = {
     id: row.id,
@@ -250,15 +195,10 @@ export function cleanCard(row: QuestionRow, reveal: boolean, uid?: string): Card
       d.srs_wrong = sr?.wrong ?? 0;
     }
   }
-  // review_verified（官方核实记录；蒸馏版新库无此表，容错跳过）
-  let vr: Record<string, unknown> | undefined;
-  try {
-    vr = qdb().prepare("SELECT * FROM review_verified WHERE qid=?").get(row.qid) as
-      | Record<string, unknown>
-      | undefined;
-  } catch {
-    vr = undefined; // 表不存在
-  }
+  // review_verified（官方核实记录）
+  const vr = qdb().prepare("SELECT * FROM review_verified WHERE qid=?").get(row.qid) as
+    | Record<string, unknown>
+    | undefined;
   d.verified = vr
     ? !reveal
       ? { status: vr.status }
@@ -271,8 +211,6 @@ export function cleanCard(row: QuestionRow, reveal: boolean, uid?: string): Card
           reasoning: vr.reasoning,
         }
     : null;
-  // 所属考点的母题抽象（仅揭晓后带出，答题阶段不剧透方法论）；走 qid 反链关联
-  d.kadian_meta = reveal ? getKadianMetaByQid(row.qid) : null;
   return d;
 }
 

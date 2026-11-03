@@ -30,15 +30,6 @@ export type Card = {
   related?: string;
   note?: string;
   fav?: number;
-  kadian_meta?: {
-    name: string;
-    module: string;
-    category: string;
-    qcount: number;
-    regions: number;
-    years: string;
-    stances: string[];
-  } | null;
 };
 
 function Html({ html, cls }: { html: string; cls?: string }) {
@@ -217,22 +208,6 @@ export function QuestionCard({
             <div>
               <h3>🧩 母题抽象</h3>
               <Html html={revealed.mother} />
-            </div>
-          )}
-          {revealed.kadian_meta && revealed.kadian_meta.stances.length > 0 && (
-            <div>
-              <h3>
-                📐 考点方法论 · {revealed.kadian_meta.name}
-                <span className="muted" style={{ fontWeight: 400, fontSize: "0.85em" }}>
-                  {" "}（{revealed.kadian_meta.qcount} 题 · {revealed.kadian_meta.regions} 地区
-                  {revealed.kadian_meta.years ? " · " + revealed.kadian_meta.years : ""}）
-                </span>
-              </h3>
-              <ul className="stances">
-                {revealed.kadian_meta.stances.map((s, i) => (
-                  <li key={i}>{s}</li>
-                ))}
-              </ul>
             </div>
           )}
           {revealed.analysis && (
