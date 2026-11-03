@@ -195,10 +195,15 @@ export function cleanCard(row: QuestionRow, reveal: boolean, uid?: string): Card
       d.srs_wrong = sr?.wrong ?? 0;
     }
   }
-  // review_verified（官方核实记录）
-  const vr = qdb().prepare("SELECT * FROM review_verified WHERE qid=?").get(row.qid) as
-    | Record<string, unknown>
-    | undefined;
+  // review_verified（官方核实记录；原始库无此表，容错跳过）
+  let vr: Record<string, unknown> | undefined;
+  try {
+    vr = qdb().prepare("SELECT * FROM review_verified WHERE qid=?").get(row.qid) as
+      | Record<string, unknown>
+      | undefined;
+  } catch {
+    vr = undefined;
+  }
   d.verified = vr
     ? !reveal
       ? { status: vr.status }
