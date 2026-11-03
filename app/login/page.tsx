@@ -60,16 +60,16 @@ export default function LoginPage() {
         <p className="muted" style={{ textAlign: "center" }}>
           行测真题 · SM-2 间隔重复
         </p>
-        <div className="row" style={{ justifyContent: "center", marginBottom: 14 }}>
-          <button className={mode === "login" ? "primary" : ""} onClick={() => setMode("login")}>
-            登录
-          </button>
-          {allowRegister && (
+        {allowRegister && (
+          <div className="row" style={{ justifyContent: "center", marginBottom: 14 }}>
+            <button className={mode === "login" ? "primary" : ""} onClick={() => setMode("login")}>
+              登录
+            </button>
             <button className={mode === "register" ? "primary" : ""} onClick={() => setMode("register")}>
               注册
             </button>
-          )}
-        </div>
+          </div>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <input placeholder="用户名" value={username} onChange={(e) => setUsername(e.target.value)} />
           <input

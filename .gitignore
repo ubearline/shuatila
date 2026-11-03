@@ -28,3 +28,4 @@ tsconfig.tsbuildinfo
 !.env.example
 .DS_Store
 Thumbs.db
+.workbuddy-ai/

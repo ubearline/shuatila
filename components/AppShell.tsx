@@ -53,8 +53,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   // 未登录 → 登录页
+  // 注意：游客登录后 setToken 会先写入 token 再跳转首页，此时 loading/authed 仍为旧值，
+  // 若仅凭 !loading && !authed 判断会误跳 /login。因此必须同时确认“确实没有 token”才跳转。
   useEffect(() => {
-    if (!loading && !authed && pathname !== "/login") {
+    if (authed || pathname === "/login") return;
+    if (loading) return; // 鉴权校验中，不跳转
+    if (!getToken()) {
       router.replace("/login");
     }
   }, [loading, authed, pathname, router]);
