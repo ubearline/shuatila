@@ -32,23 +32,30 @@ pnpm dev                # http://localhost:3000
 镜像不依赖上游，上游更新需要显式同步进本仓库：
 
 ```bash
-pnpm sync:upstream --pull --commit     # 拉上游 → 解析题库 → 图片转 WebP → 切分卷 → 校验 → 提交
+pnpm sync:upstream --pull --commit     # 拉上游 → 同步图片 → 同步分卷 → 校验 → 提交
 pnpm sync:upstream                     # 用本地上游内容同步，只改文件不提交
-pnpm sync:upstream --fresh             # 题库全量重建（清空旧题重解析）
-pnpm sync:upstream --no-images         # 只更新题库，不动图片
-pnpm sync:upstream --vault D:/kaogong/kaogongzhentizhengliu-main
+pnpm sync:upstream --no-db             # 只更新图片
+pnpm sync:upstream --no-images         # 只更新题库分卷
+pnpm sync:upstream --encode            # 上游源图非 WebP 时，改用 img2webp.py 转码
+pnpm sync:upstream --reparse           # 额外跑 parse.py 重解析 markdown 源（需 10-真题/15-材料）
+pnpm sync:upstream --vault <上游路径> [--parts-dir <路径>] [--images-dir <路径>]
+pnpm sync:upstream --dry-run           # 只看计划，不写文件
 ```
+
+上游仓库定位顺序：`--vault` → 环境变量 `KAOGONG_VAULT` → 自动探测（兄弟目录下含 `90-图片` 或 `kaogong.db.part-00` 的目录）。
 
 管线内部依次执行：
 
-| 步骤 | 脚本 | 产物 |
+| 步骤 | 动作 | 产物 |
 |---|---|---|
-| 1 拉上游（`--pull`） | `git -C <vault> pull --ff-only` | 上游最新 md + 原图 |
-| 2 解析真题 | `scripts/parse.py` | `data/kaogong.db`（增量，`--fresh` 全量） |
-| 3 图片转码 | `scripts/img2webp.py` | `data/images/`（WebP q88，已存在则跳过） |
-| 4 切分卷 | `scripts/split-db.mjs` | `db/kaogong.db.part-NN`（30 MiB/卷，先清旧卷） |
-| 5 校验 | `scripts/verify-assets.mjs` | 分卷/合并库字节一致、题数、图片张数 |
-| 6 入库（`--commit`） | `git add data/images db && git commit` | 资产进仓库 |
+| 1 拉上游（`--pull`） | `git -C <vault> pull --ff-only` | 上游最新图片 + 分卷 |
+| 2 图片同步 | `<上游>/90-图片` → 增量复制 | `data/images/`（同名同大小跳过；`--encode` 时改走 `img2webp.py` 转码） |
+| 3 分卷同步 | `<上游>/kaogong.db.part-*` → 替换 `db/`，再 `assemble-db` | `db/kaogong.db.part-NN` + `data/kaogong.db` |
+| 4 校验 | `scripts/verify-assets.mjs` | 分卷/合并库字节一致、题数、图片张数 |
+| 5 入库（`--commit`） | `git add data/images db && git commit` | 资产进仓库 |
+
+> 补充：`--reparse` 走的是另一条路（markdown 源 → `parse.py` → `split-db.mjs`），仅当上游提供 `10-真题`/`15-材料` 时使用；
+> 默认流程不解析 markdown，直接搬运上游已产出的分卷，速度最快。
 
 同步完成后重新构建镜像即可：`docker compose up -d --build`。
 
