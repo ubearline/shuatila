@@ -1,7 +1,7 @@
 name: Build & Publish Docker Image
 
 # 说明：
-# - 推 tag（如 v1.0.0）→ 构建多架构镜像并推送 GHCR
+# - 推 tag（如 v1.0.0）→ 构建多架构镜像并推送 GHCR（镜像名 + latest）
 # - 推 main → 构建并推送 latest
 # 仅使用 GitHub Container Registry（ghcr.io），无需 Docker Hub。
 # GHCR 使用内置 GITHUB_TOKEN，无需额外配置密钥。
@@ -35,17 +35,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute image tags
+      # 统一用 metadata-action 生成 tag，避免手拼字符串出错：
+      # - tag 推送（v1.2.3）→ ghcr.io/<repo>:1.2.3 和 :latest
+      # - main 推送 → ghcr.io/<repo>:latest
+      - name: Docker meta
         id: meta
-        run: |
-          repo_lower=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "image=${REGISTRY}/${repo_lower}" >> $GITHUB_OUTPUT
-          ref="${{ github.ref_type }}"
-          if [ "$ref" = "tag" ]; then
-            echo "tags=${GITHUB_REF_NAME},latest" >> $GITHUB_OUTPUT
-          else
-            echo "tags=latest" >> $GITHUB_OUTPUT
-          fi
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
 
       - name: Build & push
         uses: docker/build-push-action@v6
@@ -53,7 +54,7 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
