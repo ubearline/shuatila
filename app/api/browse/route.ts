@@ -23,8 +23,10 @@ export const GET = wrap<unknown>(async (req: NextRequest) => {
   const conds: string[] = [];
   const a: unknown[] = [];
   if (region) {
-    conds.push("q.region=?");
-    a.push(region);
+    // region 是分号分隔多值（联考卷如 "内蒙古;天津;…;湖南"），精确匹配单省查不到，
+    // 用 LIKE 匹配字段中任一段；两侧加 ; 归一化避免子串误命中（如 河南/河南南）
+    conds.push("(',' || REPLACE(q.region, ';', ',,') || ',') LIKE ?");
+    a.push(`%,${region},%`);
   }
   if (year) {
     conds.push("q.year=?");
