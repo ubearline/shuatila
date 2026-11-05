@@ -49,10 +49,11 @@ COPY --from=builder /app/package.json ./package.json
 # 静态资源（/logo.png、/brand-icon.png 等）由 next start 运行时直接从 public/ 目录读取，
 # 不会打包进 .next；漏掉它会导致容器内 logo 404。必须随产物一并 COPY。
 COPY --from=builder /app/public ./public
-# 最易变：编译产物（每次代码改动都重建）
+# 最易变：编译产物（每次代码改动都重建）。
+# 关键：剥离 .next/cache（webpack/swc 构建缓存，~113MB，运行时完全无用），
+# 否则它每次构建都变、随 .next 层一起被用户重拉。
 COPY --from=builder /app/.next ./.next
-# 构建期断言：题库 + 图片都在，缺图直接让构建失败，而不是产出满是破图的镜像
-RUN node scripts/verify-assets.mjs
+RUN rm -rf ./.next/cache && node scripts/verify-assets.mjs
 # 用户数据落持久卷 /data（users.db）
 VOLUME /data
 EXPOSE 3000
