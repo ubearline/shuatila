@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, setToken } from "@/lib/client";
+import { api, setToken, getDeviceId } from "@/lib/client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -43,7 +43,10 @@ export default function LoginPage() {
     setBusy(true);
     setErr("");
     try {
-      const r = await api<{ ok: boolean; token: string }>("/api/auth/guest", { method: "POST" });
+      const r = await api<{ ok: boolean; token: string }>("/api/auth/guest", {
+        method: "POST",
+        body: { deviceId: getDeviceId() },
+      });
       setToken(r.token);
       router.replace("/");
     } catch (e) {

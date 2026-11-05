@@ -89,6 +89,12 @@ export function ensureTables(db: Database.Database): void {
       token TEXT,
       anon INTEGER DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS auth_tokens(
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      created TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_tokens_user ON auth_tokens(user_id);
     CREATE TABLE IF NOT EXISTS srs(
       qid TEXT NOT NULL,
       user_id TEXT NOT NULL,
@@ -132,6 +138,12 @@ export function ensureTables(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_exam_user ON exam_history(user_id);
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
   `);
+  // 旧库迁移：users 表补 device_id 列（游客设备绑定）
+  try {
+    db.prepare("ALTER TABLE users ADD COLUMN device_id TEXT").run();
+  } catch {
+    /* 列已存在 */
+  }
   if (!db.prepare("SELECT value FROM settings WHERE key='daily_goal'").get()) {
     db.prepare("INSERT INTO settings(key,value) VALUES('daily_goal','20')").run();
   }

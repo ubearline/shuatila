@@ -16,6 +16,6 @@ export const POST = wrap<unknown>(async (req: NextRequest) => {
     .prepare("SELECT id FROM users WHERE username=? AND id<>?")
     .get(name, uid);
   if (clash) return json({ error: "用户名已被占用" }, 409);
-  const { token } = upgradeAccount(uid, name, pw);
+  const { token } = upgradeAccount(uid, name, pw, getToken(req));
   return json({ ok: true, token, name });
 });

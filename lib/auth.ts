@@ -44,10 +44,17 @@ export function newToken(): string {
 export function authUid(token?: string | null): string | null {
   const tok = (token || "").trim();
   if (!tok) return null;
-  const r = udb()
+  const db = udb();
+  // 多会话：tokens 表每个登录端一行（手机/电脑可同时在线，互不踢）
+  const r = db
+    .prepare("SELECT user_id AS id FROM auth_tokens WHERE token=?")
+    .get(tok) as { id: string } | undefined;
+  if (r) return r.id;
+  // 兼容旧数据：users.token 里存的最后一个 token 仍然有效
+  const legacy = db
     .prepare("SELECT id FROM users WHERE token=? AND IFNULL(token,'')<>''")
     .get(tok) as { id: string } | undefined;
-  return r ? r.id : null;
+  return legacy ? legacy.id : null;
 }
 
 export function needUid(token?: string | null): string {
@@ -63,22 +70,68 @@ export class UnauthorizedError extends Error {
   }
 }
 
-/** 创建游客（匿名）账号 */
-export function createGuestAccount(): {
+/** 签发一个新会话 token（多端同时在线：每个端一行，互不影响） */
+export function issueToken(uid: string): string {
+  const token = newToken();
+  udb()
+    .prepare(
+      `INSERT INTO auth_tokens(token, user_id, created)
+       VALUES(?,?,?)
+       ON CONFLICT(token) DO NOTHING`
+    )
+    .run(token, uid, nowIso());
+  return token;
+}
+
+/** 登出：只撤销当前端的会话，不影响其他已登录设备 */
+export function logout(uid: string, token?: string | null): void {
+  const tok = (token || "").trim();
+  if (tok) {
+    udb().prepare("DELETE FROM auth_tokens WHERE token=?").run(tok);
+    return;
+  }
+  // 无 token（历史调用）退化为清 users.token
+  udb().prepare("UPDATE users SET token='' WHERE id=?").run(uid);
+}
+
+/** 撤销某用户除 keepToken 外的全部会话（保留当前端） */
+export function revokeOtherSessions(uid: string, keepToken?: string | null): void {
+  const keep = (keepToken || "").trim();
+  if (keep) {
+    udb().prepare("DELETE FROM auth_tokens WHERE user_id=? AND token<>?").run(uid, keep);
+    udb().prepare("UPDATE users SET token='' WHERE id=? AND token<>?").run(uid, keep);
+  } else {
+    udb().prepare("DELETE FROM auth_tokens WHERE user_id=?").run(uid);
+    udb().prepare("UPDATE users SET token='' WHERE id=?").run(uid);
+  }
+}
+
+/**
+ * 创建/复用游客账号（设备绑定）：
+ * 同一 deviceId 重复进入游客模式时复用同一账号与进度，不重复注册。
+ */
+export function getOrCreateGuest(deviceId: string): {
   id: string;
   name: string;
   token: string;
+  created: boolean;
 } {
-  const id = newId();
+  const db = udb();
+  const gid = `g_${deviceId}`;
+  const existing = db
+    .prepare("SELECT id, name FROM users WHERE id=?")
+    .get(gid) as { id: string; name: string } | undefined;
+  if (existing) {
+    const token = issueToken(existing.id);
+    return { id: existing.id, name: existing.name, token, created: false };
+  }
   const token = newToken();
-  const name = `游客_${id.slice(1, 7)}`;
+  const name = `游客_${deviceId.slice(0, 6)}`;
   const created = nowIso();
-  udb()
-    .prepare(
-      "INSERT INTO users(id,name,created,username,pw_hash,token,anon) VALUES(?,?,?,?,?,?,1)"
-    )
-    .run(id, name, created, null, null, token);
-  return { id, name, token };
+  db.prepare(
+    "INSERT INTO users(id,name,created,username,pw_hash,token,anon,device_id) VALUES(?,?,?,?,?,?,1,?)"
+  ).run(gid, name, created, null, null, token, deviceId);
+  return { id: gid, name, token, created: true };
 }
 
 /** 创建正式账号（用户名 + 密码） */
@@ -87,13 +140,13 @@ export function createAccount(
   pw: string
 ): { id: string; name: string; token: string } {
   const id = newId();
-  const token = newToken();
   const created = nowIso();
   udb()
     .prepare(
-      "INSERT INTO users(id,name,created,username,pw_hash,token,anon) VALUES(?,?,?,?,?,?,0)"
+      "INSERT INTO users(id,name,created,username,pw_hash,token,anon) VALUES(?,?,?,?,?,'',0)"
     )
-    .run(id, username, created, username, pwHash(pw), token);
+    .run(id, username, created, username, pwHash(pw));
+  const token = issueToken(id);
   return { id, name: username, token };
 }
 
@@ -107,26 +160,23 @@ export function loginAccount(
     | { id: string; name: string; pw_hash: string }
     | undefined;
   if (!u || !u.pw_hash || !pwVerify(pw, u.pw_hash)) return null;
-  const token = newToken();
-  udb().prepare("UPDATE users SET token=? WHERE id=?").run(token, u.id);
-  return { id: u.id, name: u.name, token };
+  // 多端在线：签发新会话，不覆盖旧端 token
+  return { id: u.id, name: u.name, token: issueToken(u.id) };
 }
 
 /** 游客升级为正式账号（绑定用户名密码，数据不丢） */
 export function upgradeAccount(
   uid: string,
   username: string,
-  pw: string
+  pw: string,
+  currentToken?: string | null
 ): { token: string } {
-  const token = newToken();
   udb()
-    .prepare("UPDATE users SET username=?, pw_hash=?, token=?, anon=0 WHERE id=?")
-    .run(username, pwHash(pw), token, uid);
-  return { token };
-}
-
-export function logout(uid: string): void {
-  udb().prepare("UPDATE users SET token='' WHERE id=?").run(uid);
+    .prepare("UPDATE users SET username=?, pw_hash=?, anon=0, token='' WHERE id=?")
+    .run(username, pwHash(pw), uid);
+  // 保留当前端的会话（已认证为该 uid），撤销其他残留
+  revokeOtherSessions(uid, currentToken);
+  return { token: currentToken || issueToken(uid) };
 }
 
 /** 游客退出 = 销毁账号及其数据 */
