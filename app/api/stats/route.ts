@@ -20,7 +20,7 @@ export const GET = wrap<unknown>(async (req: NextRequest) => {
   const dueNew = Math.max(0, totalQ - learned.n);
   const dueRev = ud.prepare("SELECT COUNT(*) n FROM srs WHERE user_id=? AND status!='new' AND due<=?").get(uid, t) as { n: number };
   const studiedToday = ud
-    .prepare("SELECT COUNT(DISTINCT qid) n FROM reviews WHERE user_id=? AND date(ts)=?")
+    .prepare("SELECT COUNT(DISTINCT qid) n FROM reviews WHERE user_id=? AND date(ts,'+8 hours')=?")
     .get(uid, t) as { n: number };
   const wrongN = ud.prepare("SELECT COUNT(*) n FROM srs WHERE user_id=? AND wrong>0").get(uid) as { n: number };
   const favN = ud.prepare("SELECT COUNT(*) n FROM favorites WHERE user_id=?").get(uid) as { n: number };

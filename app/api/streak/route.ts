@@ -8,7 +8,7 @@ import { todayStr } from "@/lib/sm2";
 export const GET = wrap<unknown>(async (req: NextRequest) => {
   const uid = needUid(getToken(req));
   const ud = udb();
-  const dates = (ud.prepare("SELECT DISTINCT date(ts) d FROM reviews WHERE user_id=? ORDER BY d DESC").all(uid) as { d: string }[]).map((r) => r.d);
+  const dates = (ud.prepare("SELECT DISTINCT date(ts,'+8 hours') d FROM reviews WHERE user_id=? ORDER BY d DESC").all(uid) as { d: string }[]).map((r) => r.d);
   const dset = new Set(dates);
   const today = todayStr();
   let cur = 0;
@@ -32,6 +32,6 @@ export const GET = wrap<unknown>(async (req: NextRequest) => {
   }
   const goalR = ud.prepare("SELECT value FROM settings WHERE key='daily_goal'").get() as { value: string } | undefined;
   const goal = parseInt(goalR?.value || "20", 10) || 20;
-  const todayN = ud.prepare("SELECT COUNT(DISTINCT qid) n FROM reviews WHERE user_id=? AND date(ts)=?").get(uid, today) as { n: number };
+  const todayN = ud.prepare("SELECT COUNT(DISTINCT qid) n FROM reviews WHERE user_id=? AND date(ts,'+8 hours')=?").get(uid, today) as { n: number };
   return json({ current: cur, best, goal, today: todayN.n });
 });

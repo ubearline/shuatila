@@ -19,9 +19,12 @@ function addDays(days: number): string {
 }
 
 export function toDateStr(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  // 固定按北京时间（UTC+8）取日期：容器/部署机可能是 UTC，
+  // 否则"今日"会在北京时间早上 8 点才翻转，晚间练习被算到第二天。
+  const bjs = new Date(d.getTime() + (8 * 60 + d.getTimezoneOffset()) * 60000);
+  const y = bjs.getFullYear();
+  const m = String(bjs.getMonth() + 1).padStart(2, "0");
+  const day = String(bjs.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 

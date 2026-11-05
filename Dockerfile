@@ -31,6 +31,7 @@ RUN pnpm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
+    TZ=Asia/Shanghai \
     PORT=3000 \
     KAOGONG_DB_PATH=/app/data/kaogong.db \
     IMAGES_DIR=/app/data/images \

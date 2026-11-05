@@ -10,7 +10,7 @@ export const GET = wrap<unknown>(async (req: NextRequest) => {
   const ud = udb();
   const rows = ud
     .prepare(
-      "SELECT date(ts) d, COUNT(DISTINCT qid) n FROM reviews WHERE user_id=? AND ts>=? GROUP BY date(ts)"
+      "SELECT date(ts,'+8 hours') d, COUNT(DISTINCT qid) n FROM reviews WHERE user_id=? AND ts>=? GROUP BY date(ts,'+8 hours')"
     )
     .all(uid, new Date(Date.now() - days * 864e5).toISOString()) as { d: string; n: number }[];
   const map = new Map(rows.map((r) => [r.d, r.n]));
